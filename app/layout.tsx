@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Loomi Live",
-  description: "Loomi Live - Public Chat, Mansion VIP",
+  description: "Loomi Live Streaming",
 };
 
 export default function RootLayout({
@@ -13,7 +13,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="bg-black">{children}</body>
+      <body>{children}</body>
     </html>
   );
 }
