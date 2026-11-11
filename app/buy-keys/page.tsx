@@ -1,121 +1,136 @@
 "use client";
 import { useEffect, useState } from "react";
 
-declare global { 
-  interface Window { 
-    PaystackPop: any 
-  } 
-}
+export default function LoomiLive() {
+  const [keys, setKeys] = useState(0);
+  const [chat, setChat] = useState([
+    { user: "kaito_za", msg: "Yo bruvv 🔥" },
+    { user: "lebza__", msg: "You peng!" },
+    { user: "viewer_01", msg: "Let's gooo!" },
+  ]);
+  const [input, setInput] = useState("");
+  const [isVip, setIsVip] = useState(false);
+  const [hearts, setHearts] = useState(12.4);
 
-export default function BuyKeys(){
-  const [ready, setReady] = useState(false);
-  
-  useEffect(()=>{
-    // Load Paystack script
-    const script = document.createElement("script");
-    script.src = "https://js.paystack.co/v1/inline.js";
-    script.async = true;
-    script.onload = ()=> setReady(true);
-    document.body.appendChild(script);
+  useEffect(() => {
+    setKeys(parseInt(localStorage.getItem("loomi_keys") || "0"));
+    const vip = localStorage.getItem("loomi_vip") === "true";
+    setIsVip(vip);
+  }, []);
 
-    return ()=>{
-      // cleanup
-      try { document.body.removeChild(script); } catch {}
-    }
-  },[]);
-
-  const pay = (keys:number, rand:number)=>{
-    if(!ready || !window.PaystackPop){
-      alert("Paystack still loading... wait 2 seconds and try again");
-      return;
-    }
-
-    if(!process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY){
-      alert("Missing Paystack Public Key in Vercel envs");
-      return;
-    }
-    
-    const handler = window.PaystackPop.setup({
-      key: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY,
-      email: `user${Date.now()}@loomilive.com`,
-      amount: rand * 100, // Paystack uses kobo/cents: R100 = 10000
-      currency: "ZAR",
-      ref: `LOOMI-${Date.now()}`,
-      metadata: { 
-        custom_fields: [
-          { display_name: "Product", variable_name: "product", value: `${keys} Loomi Keys` },
-          { display_name: "App", variable_name: "app", value: "Loomi Live" }
-        ] 
-      },
-      callback: function(response:any){ 
-        console.log("Payment ref:", response.reference);
-        const current = parseInt(localStorage.getItem("loomi_keys") || "0");
-        const total = current + keys;
-        localStorage.setItem("loomi_keys", String(total)); 
-        alert(`✅ Added ${keys} Loomi Keys! Ref: ${response.reference}`); 
-        window.location.href="/"; 
-      },
-      onClose: function(){ 
-        console.log("Payment window closed");
-      }
-    }); 
-
-    handler.openIframe();
+  const sendChat = () => {
+    if(!input.trim()) return;
+    setChat([...chat, { user: "you", msg: input }]);
+    setInput("");
   };
 
-  return(
-    <div className="min-h-screen bg-black text-white max-w-[430px] mx-auto p-6">
-      <div className="mt-2">
-        <h1 className="text-2xl font-bold">Get Loomi Keys 🔑</h1>
-        <p className="text-zinc-400 text-sm mt-1">Unlock Mansion VIP & Premium Stickers</p>
+  const unlockVip = () => {
+    if(keys < 30){
+      if(confirm("You need 30 Keys. Buy now?")){
+        window.location.href="/buy-keys";
+      }
+      return;
+    }
+    const newKeys = keys - 30;
+    localStorage.setItem("loomi_keys", String(newKeys));
+    localStorage.setItem("loomi_vip", "true");
+    setKeys(newKeys);
+    setIsVip(true);
+    alert("🔓 MANSION VIP UNLOCKED! Welcome to the VIP House");
+  };
+
+  const sendGift = (cost: number) => {
+    if(keys < cost){
+      alert("Not enough Keys - Buy more");
+      window.location.href="/buy-keys";
+      return;
+    }
+    const newKeys = keys - cost;
+    localStorage.setItem("loomi_keys", String(newKeys));
+    setKeys(newKeys);
+    setHearts(h => +(h+0.1).toFixed(1));
+    setChat([...chat, { user: "you", msg: `Sent ${cost} Keys gift! 🎁` }]);
+  };
+
+  return (
+    <div className="min-h-screen bg-black text-white flex flex-col max-w-[430px] mx-auto relative overflow-hidden">
+      
+      {/* TOP BAR */}
+      <div className="flex items-center justify-between px-3 py-2 bg-black/90 backdrop-blur sticky top-0 z-20 border-b border-zinc-800">
+        <div className="flex items-center gap-2">
+          <span className="bg-red-600 text-white text-[11px] px-2 py-0.5 rounded font-bold animate-pulse">LIVE</span>
+          <span className="font-bold text-sm">Loomi Live</span>
+          <span className="text-zinc-400 text-xs flex items-center gap-1">👁️ 342 watching</span>
+        </div>
+        <button onClick={()=>window.location.href="/buy-keys"} className="bg-zinc-800 border border-yellow-500/50 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1">
+          <span className="text-yellow-400">🪙</span> {keys} Keys
+        </button>
       </div>
 
-      <div className="mt-6 space-y-3">
-        <button 
-          onClick={()=>pay(100,100)} 
-          className="w-full bg-zinc-900 p-4 rounded-xl flex justify-between items-center border border-zinc-800 active:scale-[0.98] transition"
-        >
-          <span className="font-medium">100 Keys</span>
-          <b className="text-lg">R100</b>
-        </button>
+      {/* HOST CAMERA */}
+      <div className="relative bg-zinc-900 aspect-[9/12] w-full flex items-center justify-center overflow-hidden">
+        <div className="w-full h-full bg-gradient-to-b from-zinc-800 to-black flex flex-col items-center justify-center">
+          <div className="w-24 h-24 rounded-full bg-zinc-700 border-2 border-white/20 mb-3" />
+          <p className="text-white/60 text-sm">Host Camera [Agora SDK here]</p>
+          {isVip && <p className="mt-2 bg-yellow-400 text-black text-xs px-3 py-1 rounded-full font-bold">👑 MANSION VIP LIVE</p>}
+        </div>
 
-        <button 
-          onClick={()=>pay(320,280)} 
-          className="w-full bg-white text-black p-4 rounded-xl flex justify-between items-center font-bold border-2 border-yellow-400 active:scale-[0.98] transition shadow-[0_0_20px_rgba(250,204,21,0.3)]"
-        >
-          <span>320 Keys +20 Bonus 🔥 Most Popular</span>
-          <b className="text-lg">R280</b>
-        </button>
+        <div className="absolute left-3 bottom-32 flex flex-col gap-2">
+          <div className="bg-black/60 backdrop-blur px-2 py-1.5 rounded-full text-xs flex flex-col items-center">
+            <span>❤️</span> <b>{hearts}k</b>
+          </div>
+          <div className="bg-black/60 backdrop-blur px-2 py-1.5 rounded-full text-xs flex flex-col items-center">
+            <span>💬</span> <b>892</b>
+          </div>
+          <div className="bg-black/60 backdrop-blur px-2 py-1.5 rounded-full text-xs flex flex-col items-center">
+            <span>🎁</span> <b>Gifts</b>
+          </div>
+        </div>
 
-        <button 
-          onClick={()=>pay(1100,900)} 
-          className="w-full bg-zinc-900 p-4 rounded-xl flex justify-between items-center border border-zinc-800 active:scale-[0.98] transition"
-        >
-          <span className="font-medium">1100 Keys +100 Bonus</span>
-          <b className="text-lg">R900</b>
+        <div className="absolute right-3 top-3 bg-black/70 backdrop-blur px-3 py-2 rounded-xl text-xs w-32">
+          <div className="flex justify-between"><span>🏠 Unlock Mansion</span><span>70%</span></div>
+          <div className="h-1.5 bg-zinc-700 rounded-full mt-1.5 overflow-hidden">
+            <div className="h-full bg-yellow-400 w-[70%]"></div>
+          </div>
+        </div>
+      </div>
+
+      {/* PUBLIC CHAT */}
+      <div className="flex-1 px-3 py-3 space-y-1.5 overflow-y-auto max-h-[22vh] bg-gradient-to-t from-black to-transparent">
+        <p className="text-[11px] text-zinc-500 font-bold tracking-widest">PUBLIC CHAT</p>
+        {chat.map((c,i)=>(
+          <p key={i} className="text-[13px]"><span className="text-zinc-500">@{c.user}:</span> <span className="text-white">{c.msg}</span></p>
+        ))}
+      </div>
+
+      {/* CHAT INPUT */}
+      <div className="flex gap-2 px-3 py-2 bg-zinc-900/80 border-t border-zinc-800">
+        <input 
+          value={input}
+          onChange={e=>setInput(e.target.value)}
+          onKeyDown={e=>e.key==="Enter" && sendChat()}
+          placeholder="Say something on Loomi..." 
+          className="flex-1 bg-zinc-800 rounded-full px-4 py-2 text-sm outline-none"
+        />
+        <button onClick={sendChat} className="bg-white text-black px-4 rounded-full text-sm font-bold">Send</button>
+      </div>
+
+      {/* GIFTS */}
+      <div className="px-2 py-2 bg-black border-t border-zinc-800">
+        <div className="flex gap-2 overflow-x-auto no-scrollbar">
+          <button onClick={()=>sendGift(0)} className="min-w-[60px] bg-zinc-900 rounded-xl py-2 flex flex-col items-center border border-zinc-800"><span>🔥</span><span className="text-[10px] mt-1">FREE</span></button>
+          <button onClick={()=>sendGift(0)} className="min-w-[60px] bg-zinc-900 rounded-xl py-2 flex flex-col items-center border border-zinc-800"><span>😍</span><span className="text-[10px] mt-1">FREE</span></button>
+          <button onClick={()=>sendGift(0)} className="min-w-[60px] bg-zinc-900 rounded-xl py-2 flex flex-col items-center border border-zinc-800"><span>👍</span><span className="text-[10px] mt-1">FREE</span></button>
+          <button onClick={()=>sendGift(5)} className="min-w-[60px] bg-zinc-800 rounded-xl py-2 flex flex-col items-center border border-yellow-900/50"><span>🔒</span><span className="text-[10px] mt-1">5 Keys</span></button>
+          <button onClick={()=>sendGift(10)} className="min-w-[60px] bg-zinc-800 rounded-xl py-2 flex flex-col items-center border border-yellow-900/50"><span>👑</span><span className="text-[10px] mt-1">10 Keys</span></button>
+          <button onClick={()=>sendGift(20)} className="min-w-[60px] bg-zinc-800 rounded-xl py-2 flex flex-col items-center border border-yellow-900/50"><span>💎</span><span className="text-[10px] mt-1">20 Keys</span></button>
+        </div>
+
+        <button onClick={unlockVip} className={`w-full mt-3 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 ${isVip ? "bg-green-600" : "bg-gradient-to-r from-yellow-400 to-orange-500 text-black"}`}>
+          {isVip ? "✅ Mansion VIP Unlocked" : "👑 Unlock Mansion VIP — 30 Loomi Keys"}
         </button>
       </div>
 
-      <div className="mt-8 text-center">
-        {!ready ? (
-          <p className="text-xs text-yellow-400 animate-pulse">Loading Paystack secure checkout...</p>
-        ) : (
-          <p className="text-xs text-green-400">✅ Paystack ready - Pay with Card, EFT, Scan to Pay</p>
-        )}
-      </div>
-
-      <p className="text-[11px] text-zinc-500 mt-6 text-center leading-relaxed">
-        Secure payment via Paystack<br/>
-        Purchase of virtual Loomi Keys, not adult content<br/>
-        Keys are non-refundable virtual currency for Loomi Live
-      </p>
-
-      <button 
-        onClick={()=> window.location.href="/"} 
-        className="w-full mt-8 text-sm text-zinc-400 underline"
-      >
-        ← Back to Live
-      </button>
     </div>
-  )
-}
+  );
+      }
