@@ -24,6 +24,7 @@ export default function LoomiLive() {
   const pcsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
   const chatEndRef = useRef<HTMLDivElement>(null);
   const nicknameRef = useRef<string>("");
+  const remoteStreamRef = useRef<MediaStream>(new MediaStream());
 
   useEffect(() => { nicknameRef.current = nickname; }, [nickname]);
 
@@ -32,7 +33,6 @@ export default function LoomiLive() {
     if (saved) { setNickname(saved); nicknameRef.current = saved; }
     const savedKeys = localStorage.getItem("loomi_keys");
     if(savedKeys) setKeys(parseInt(savedKeys));
-    
     const q = query(collection(db, "live_chat"), orderBy("createdAt", "asc"), limit(150));
     const unsubChat = onSnapshot(q, s => {
       const msgs = s.docs.map(d => d.data());
@@ -40,7 +40,6 @@ export default function LoomiLive() {
       s.docChanges().forEach(change => {
         if(change.type==="added"){
           const data = change.doc.data() as any;
-          // FIX: use ref, not stale state
           if(data.gift && data.user !== nicknameRef.current){
             triggerGift(data.gift);
           }
@@ -84,7 +83,6 @@ export default function LoomiLive() {
 
   const goLive = async () => {
     try {
-      // clean old pcs
       pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear();
       const stream = await navigator.mediaDevices.getUserMedia({video:{width:640, height:480, facingMode:"user"}, audio:true});
       streamRef.current = stream;
@@ -92,8 +90,7 @@ export default function LoomiLive() {
       setIsLive(true); setWatching(null);
       await setDoc(doc(db, "live_rooms", nicknameRef.current), { nickname: nicknameRef.current, isLive:true, createdAt: serverTimestamp() });
 
-      // FIX: single listener, not multiple
-      const unsub = onSnapshot(collection(db, `live_rooms/${nicknameRef.current}/viewers`), async snap => {
+      onSnapshot(collection(db, `live_rooms/${nicknameRef.current}/viewers`), async snap => {
         for(const change of snap.docChanges()){
           if(change.type==="added"){
             const viewerId = change.doc.id;
@@ -122,35 +119,75 @@ export default function LoomiLive() {
     setIsLive(false);
     if(videoRef.current) videoRef.current.srcObject=null;
     try{
-      // clean viewers subcollection
       const viewersSnap = await getDocs(collection(db, `live_rooms/${nicknameRef.current}/viewers`));
       viewersSnap.forEach(async d=>{ await deleteDoc(d.ref); });
       await deleteDoc(doc(db, "live_rooms", nicknameRef.current));
     }catch{}
   };
 
+  // FIXED WATCH - NO MORE BLACK
   const watchHost = async (hostNick: string) => {
     if(isLive) await stopLive();
     pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear();
+    remoteStreamRef.current = new MediaStream();
     setWatching(hostNick);
+    
     const pc = new RTCPeerConnection(ICE);
     pcsRef.current.set(hostNick, pc);
-    pc.ontrack = e => { if(remoteRef.current){ remoteRef.current.srcObject = e.streams[0]; remoteRef.current.play().catch(()=>{}); } };
-    pc.onicecandidate = e => { if(e.candidate) addDoc(collection(db, `live_rooms/${hostNick}/viewers/${nicknameRef.current}/candidates_viewer`), { candidate: e.candidate.toJSON() }); };
+
+    // pre-assign empty stream so video element is ready
+    if(remoteRef.current){
+      remoteRef.current.srcObject = remoteStreamRef.current;
+    }
+
+    pc.ontrack = (e) => {
+      console.log("Got track:", e.track.kind);
+      remoteStreamRef.current.addTrack(e.track);
+      if(remoteRef.current){
+        remoteRef.current.srcObject = remoteStreamRef.current;
+        remoteRef.current.muted = false;
+        remoteRef.current.play().catch(()=>{ 
+          if(remoteRef.current){ remoteRef.current.muted = true; remoteRef.current.play(); }
+        });
+      }
+    };
+
+    pc.onicecandidate = e => { 
+      if(e.candidate) addDoc(collection(db, `live_rooms/${hostNick}/viewers/${nicknameRef.current}/candidates_viewer`), { candidate: e.candidate.toJSON() }); 
+    };
+    
     onSnapshot(collection(db, `live_rooms/${hostNick}/viewers/${nicknameRef.current}/candidates_host`), s => {
-      s.docChanges().forEach(async ch=>{ if(ch.type==="added"){ try{ await pc.addIceCandidate(new RTCIceCandidate(ch.doc.data().candidate)); }catch{} } });
+      s.docChanges().forEach(async ch=>{ 
+        if(ch.type==="added"){ 
+          try{ await pc.addIceCandidate(new RTCIceCandidate(ch.doc.data().candidate)); }catch{} 
+        } 
+      });
     });
+
+    // IMPORTANT for viewer - tell we want to receive
+    pc.addTransceiver("video", { direction: "recvonly" });
+    pc.addTransceiver("audio", { direction: "recvonly" });
+
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    await setDoc(doc(db, `live_rooms/${hostNick}/viewers/${nicknameRef.current}`), { viewer: nicknameRef.current, offer: { sdp: offer.sdp, type: offer.type }, createdAt: serverTimestamp() });
+    await setDoc(doc(db, `live_rooms/${hostNick}/viewers/${nicknameRef.current}`), { 
+      viewer: nicknameRef.current, 
+      offer: { sdp: offer.sdp, type: offer.type }, 
+      createdAt: serverTimestamp() 
+    });
+    
     onSnapshot(doc(db, `live_rooms/${hostNick}/viewers/${nicknameRef.current}`), async snap => {
-      const data=snap.data() as any; if(data?.answer && pc.signalingState==="have-local-offer"){ await pc.setRemoteDescription(new RTCSessionDescription(data.answer)); }
+      const data=snap.data() as any; 
+      if(data?.answer && pc.signalingState==="have-local-offer"){ 
+        await pc.setRemoteDescription(new RTCSessionDescription(data.answer)); 
+      }
     });
   };
 
   const stopWatching = async () => {
     pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear();
     if(remoteRef.current) remoteRef.current.srcObject=null;
+    remoteStreamRef.current = new MediaStream();
     const w=watching; setWatching(null);
     try{ if(w) await deleteDoc(doc(db, `live_rooms/${w}/viewers/${nicknameRef.current}`)); }catch{}
   };
@@ -178,12 +215,12 @@ export default function LoomiLive() {
 
       <div className="relative bg-zinc-900 aspect-[9/12] w-full overflow-hidden">
         <video ref={videoRef} autoPlay muted playsInline className={`w-full h-full object-cover ${isLive ? "block" : "hidden"}`} />
-        <video ref={remoteRef} autoPlay playsInline className={`w-full h-full object-cover bg-black ${watching ? "block" : "hidden"}`} />
+        <video ref={remoteRef} autoPlay playsInline muted={false} className={`w-full h-full object-cover bg-black ${watching ? "block" : "hidden"}`} />
         <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
           {gifts.map(g=>{
             if(g.type==="heart") return <div key={g.id} className="absolute bottom-10 animate-heart text-3xl" style={{ left: `${g.x}%` }}>❤️</div>;
             if(g.type==="rocket") return <div key={g.id} className="absolute bottom-0 animate-rocket text-5xl" style={{ left: `${g.x}%` }}>🚀</div>;
-            if(g.type==="crown") return <div key={g.id} className="absolute bottom-10 animate-crown text-5xl" style={{ left: `${g.x}%` }}>👑<span className="absolute -top-2 text-sm animate-sparkle">✨</span></div>;
+            if(g.type==="crown") return <div key={g.id} className="absolute bottom-10 animate-crown text-5xl" style={{ left: `${g.x}%` }}>👑</div>;
             if(g.type==="diamond") return <div key={g.id} className="absolute bottom-0 animate-diamond text-4xl" style={{ left: `${g.x}%` }}>💎</div>;
             if(g.type==="fire") return <div key={g.id} className="absolute bottom-0 animate-fire text-5xl w-full text-center" style={{ left: 0 }}>🔥🔥🔥</div>;
             return null;
@@ -228,13 +265,11 @@ export default function LoomiLive() {
         @keyframes crownDrop{0%{transform:translateY(-20vh) scale(0)}100%{transform:translateY(90vh) scale(0.8);opacity:0}}
         @keyframes diamondFall{0%{transform:translateY(-10vh) rotate(0deg) scale(0.5);opacity:0}10%{opacity:1}100%{transform:translateY(100vh) rotate(720deg) scale(1.2);opacity:0}}
         @keyframes fireShake{0%{transform:translateY(0)}100%{transform:translateY(-90vh) scale(0);opacity:0}}
-        @keyframes sparkle{0%,100%{opacity:0}50%{opacity:1}}
         .animate-heart{animation:heartFloat 3s ease-out forwards}
         .animate-rocket{animation:rocketLaunch 2.2s ease-out forwards}
         .animate-crown{animation:crownDrop 3s ease-in-out forwards}
         .animate-diamond{animation:diamondFall 2.8s ease-in forwards}
         .animate-fire{animation:fireShake 2.5s ease-out forwards}
-        .animate-sparkle{animation:sparkle 0.6s infinite}
       `}</style>
     </div>
   );
