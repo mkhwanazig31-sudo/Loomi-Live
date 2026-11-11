@@ -1,9 +1,11 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import { db } from "../lib/firebase";
-import { collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp } from "firebase/firestore";
+import { collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, doc, setDoc } from "firebase/firestore";
 
 export default function LoomiLive() {
+  const [nickname, setNickname] = useState<string>("");
+  const [tempNick, setTempNick] = useState("");
   const [keys, setKeys] = useState(0);
   const [tab, setTab] = useState<"hosters" | "audience">("audience");
   const [chat, setChat] = useState<any[]>([]);
@@ -17,26 +19,25 @@ export default function LoomiLive() {
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const hosters = [
-    { id: "you", name: "You", live: isLive, avatar: "👑" },
+    { id: "you", name: nickname || "You", live: isLive, avatar: "👑" },
     { id: "invite1", name: "Invite", live: false, avatar: "+" },
-    { id: "invite2", name: "Invite", live: false, avatar: "+" },
   ];
 
   const audience = [
+    { name: nickname || "you", keys: keys, vip: isVip },
     { name: "kaito_za", keys: 320, vip: true },
     { name: "lebza__", keys: 1100, vip: true },
-    { name: "viewer_01", keys: 50, vip: false },
-    { name: "momo_za", keys: 200, vip: false },
   ];
 
   useEffect(() => {
-    setKeys(parseInt(localStorage.getItem("loomi_keys") || "0"));
+    const savedNick = localStorage.getItem("loomi_nickname");
+    if (savedNick) setNickname(savedNick);
+    setKeys(parseInt(localStorage.getItem("loomi_keys") || "100"));
     setIsVip(localStorage.getItem("loomi_vip") === "true");
 
     const q = query(collection(db, "live_chat"), orderBy("createdAt", "asc"), limit(150));
     const unsub = onSnapshot(q, (snap) => {
-      const msgs = snap.docs.map(d => d.data());
-      if(msgs.length > 0) setChat(msgs);
+      setChat(snap.docs.map(d => d.data()));
     });
     return () => unsub();
   }, []);
@@ -44,6 +45,24 @@ export default function LoomiLive() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chat]);
+
+  const saveNickname = async () => {
+    const clean = tempNick.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
+    if (clean.length < 3) return alert("Nickname min 3 letters. Use a-z, 0-9, _");
+    if (clean.length > 15) return alert("Max 15");
+    localStorage.setItem("loomi_nickname", clean);
+    setNickname(clean);
+    // PUBLIC profile - visible to all (only nickname)
+    try {
+      await setDoc(doc(db, "users_public", clean), {
+        nickname: clean,
+        createdAt: serverTimestamp(),
+        keys: 100,
+      });
+      // PRIVATE - only you dev can see (we don't create this from client, you see in Auth tab)
+      // Email/real name will be in Firebase Auth - NOT in public collection
+    } catch {}
+  };
 
   const goLive = async () => {
     try {
@@ -63,7 +82,7 @@ export default function LoomiLive() {
     setInput("");
     try {
       await addDoc(collection(db, "live_chat"), {
-        user: "you",
+        user: nickname, // NICKNAME ONLY - not real name
         msg: text,
         createdAt: serverTimestamp()
       });
@@ -80,21 +99,47 @@ export default function LoomiLive() {
     const n = keys-30; localStorage.setItem("loomi_keys", String(n)); localStorage.setItem("loomi_vip","true"); setKeys(n); setIsVip(true);
   };
 
+  // NICKNAME PICKER - FIRST SCREEN
+  if(!nickname){
+    return (
+      <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center max-w-[430px] mx-auto p-6">
+        <div className="w-full">
+          <h1 className="text-[28px] font-black mb-2">Pick your alias</h1>
+          <p className="text-zinc-500 text-[13px] mb-1">This is what people see in chat. No real name.</p>
+          <p className="text-zinc-600 text-[11px] mb-6">Your real credentials stay private. Only devs see them in Firebase Auth, never shown to users.</p>
+          <div className="relative">
+            <span className="absolute left-4 top-3.5 text-zinc-500">@</span>
+            <input 
+              value={tempNick}
+              onChange={e=>setTempNick(e.target.value)}
+              placeholder="kaito_za" 
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-8 pr-4 py-3 text-white outline-none focus:border-white"
+              maxLength={15}
+            />
+          </div>
+          <button onClick={saveNickname} className="w-full mt-4 bg-white text-black py-3.5 rounded-xl font-black">Continue →</button>
+          <p className="text-[10px] text-zinc-600 mt-4 text-center">🔒 Email/phone is never public. Public = nickname only. Private = Firebase Auth (only you dev).</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-black text-white flex flex-col max-w-[430px] mx-auto">
       <div className="flex items-center justify-between px-3 py-2 bg-black sticky top-0 z-20 border-b border-zinc-800">
         <div className="flex items-center gap-2">
           <span className={`text-white text-[11px] px-2 py-0.5 rounded font-bold ${isLive ? "bg-red-600 animate-pulse" : "bg-zinc-700"}`}>{isLive ? "● LIVE" : "LIVE"}</span>
-          <span className="font-bold text-sm">loomi-live</span>
+          <span className="font-bold text-sm">@{nickname}</span>
         </div>
-        <button onClick={()=>window.location.href="/buy-keys"} className="bg-zinc-800 border border-yellow-500/50 px-3 py-1 rounded-full text-xs font-bold">🪙 {keys} Keys</button>
+        <button className="bg-zinc-800 border border-yellow-500/50 px-3 py-1 rounded-full text-xs font-bold">🪙 {keys} Keys</button>
       </div>
 
       <div className="relative bg-zinc-900 aspect-[9/11] w-full overflow-hidden">
         <video ref={videoRef} autoPlay muted playsInline className={`w-full h-full object-cover ${isLive ? "block" : "hidden"}`} />
         {!isLive && (
           <div className="w-full h-full bg-gradient-to-b from-zinc-800 to-black flex flex-col items-center justify-center">
-            <div className="w-24 h-24 rounded-full bg-zinc-700 border-2 border-white/20 mb-3" />
+            <div className="w-24 h-24 rounded-full bg-zinc-700 border-2 border-white/20 mb-3 flex items-center justify-center text-2xl">👑</div>
+            <p className="text-white/60 text-sm">@{nickname}</p>
             <button onClick={goLive} className="mt-6 bg-white text-black px-8 py-3 rounded-full font-black text-sm">🔴 GO LIVE</button>
           </div>
         )}
@@ -110,7 +155,7 @@ export default function LoomiLive() {
       </div>
 
       <div className="flex gap-2 px-3 py-2 bg-zinc-900 border-t border-zinc-800">
-        <button onClick={()=>setTab("hosters")} className={`px-4 py-1.5 rounded-full text-xs font-bold ${tab==="hosters" ? "bg-white text-black" : "bg-zinc-800 text-zinc-400"}`}>👑 Hosters (3)</button>
+        <button onClick={()=>setTab("hosters")} className={`px-4 py-1.5 rounded-full text-xs font-bold ${tab==="hosters" ? "bg-white text-black" : "bg-zinc-800 text-zinc-400"}`}>👑 Hosters</button>
         <button onClick={()=>setTab("audience")} className={`px-4 py-1.5 rounded-full text-xs font-bold ${tab==="audience" ? "bg-white text-black" : "bg-zinc-800 text-zinc-400"}`}>👥 Audience</button>
       </div>
 
@@ -146,7 +191,7 @@ export default function LoomiLive() {
 
       <div className="px-3 py-2 bg-zinc-900/80 border-t border-zinc-800">
         <div className="flex gap-2">
-          <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter" && sendChat()} placeholder="Say something..." className="flex-1 bg-zinc-800 rounded-full px-4 py-2 text-sm outline-none"/>
+          <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter" && sendChat()} placeholder={`Chat as @${nickname}...`} className="flex-1 bg-zinc-800 rounded-full px-4 py-2 text-sm outline-none"/>
           <button onClick={sendChat} className="bg-white text-black px-4 rounded-full text-sm font-bold">Send</button>
         </div>
       </div>
@@ -160,4 +205,4 @@ export default function LoomiLive() {
       </div>
     </div>
   );
-        }
+      }
