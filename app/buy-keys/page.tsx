@@ -6,8 +6,14 @@ export default function BuyKeys(){
       key: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY,
       email: `user${Date.now()}@loomilive.com`,
       amount: rand*100,
+      currency: "ZAR",
       metadata: { custom_fields: [{ display_name: "Product", variable_name: "product", value: `${keys} Loomi Keys` }] },
-      callback: ()=>{ localStorage.setItem("loomi_keys", String(keys)); alert(`Added ${keys} Loomi Keys!`); window.location.href="/"; }
+      callback: ()=>{ 
+        const current = parseInt(localStorage.getItem("loomi_keys") || "0");
+        localStorage.setItem("loomi_keys", String(current + keys)); 
+        alert(`Added ${keys} Loomi Keys!`); 
+        window.location.href="/"; 
+      }
     }); handler.openIframe();
   };
   return(
