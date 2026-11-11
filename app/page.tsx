@@ -21,7 +21,8 @@ export default function LoomiLive() {
   const [showGifts, setShowGifts] = useState(false);
   const [rankingTab, setRankingTab] = useState<"viewers"|"guardian">("viewers");
   const [showRecharge, setShowRecharge] = useState(false);
-
+  const [showDashboard, setShowDashboard] = useState(false);
+  
   const videoRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -221,11 +222,14 @@ export default function LoomiLive() {
     <div className="min-h-screen bg-black text-white flex flex-col max-w-[430px] mx-auto relative overflow-hidden">
       
       {/* TOP TIKTOK STYLE TABS - BUG 5 */}
-      <div className="flex justify-around border-b border-zinc-800 bg-black text-[12px] font-bold">
-        <button onClick={()=>setTab("live")} className={`py-3 px-2 ${tab==="live"?"border-b-2 border-white text-white":"text-zinc-500"}`}>LIVE</button>
-        <button onClick={()=>setTab("discover")} className={`py-3 px-2 ${tab==="discover"?"border-b-2 border-white":"text-zinc-500"}`}>Discover</button>
-        <button onClick={()=>setTab("ranking")} className={`py-3 px-2 ${tab==="ranking"?"border-b-2 border-white":"text-zinc-500"}`}>Rankings</button>
-        <button onClick={()=>setTab("balance")} className={`py-3 px-2 ${tab==="balance"?"border-b-2 border-white":"text-zinc-500"}`}>Balance</button>
+           <div className="flex justify-between items-center border-b border-zinc-800 bg-black px-3">
+        <div className="flex gap-4 text-[12px] font-bold">
+          <button onClick={()=>setTab("live")} className={`py-3 ${tab==="live"?"border-b-2 border-white text-white":"text-zinc-500"}`}>LIVE</button>
+          <button onClick={()=>setTab("discover")} className={`py-3 ${tab==="discover"?"border-b-2 border-white":"text-zinc-500"}`}>Discover</button>
+          <button onClick={()=>setTab("ranking")} className={`py-3 ${tab==="ranking"?"border-b-2 border-white":"text-zinc-500"}`}>Rankings</button>
+          <button onClick={()=>setTab("balance")} className={`py-3 ${tab==="balance"?"border-b-2 border-white":"text-zinc-500"}`}>Balance</button>
+        </div>
+        <button onClick={()=>setShowDashboard(true)} className="text-xl">☰</button>
       </div>
 
       <div className="flex justify-between items-center p-2 bg-black text-xs">
@@ -351,7 +355,49 @@ export default function LoomiLive() {
       <style>{`
         @keyframes heartFloat{0%{transform:translateY(0) scale(0.3);opacity:0}15%{opacity:1}100%{transform:translateY(-80vh);opacity:0}}
         .animate-heart{animation:heartFloat 3s ease-out forwards}
-      `}</style>
+      `}
+      
+           {/* FUNCTION: Dashboard Drawer - like your screenshot, Loomi style */}
+      {showDashboard && (
+        <div className="absolute inset-0 z-[100] flex">
+          <div className="flex-1 bg-black/60" onClick={()=>setShowDashboard(false)}></div>
+          <div className="w-[78%] max-w-[320px] bg-[#f5f5f5] h-full overflow-y-auto p-3 space-y-3">
+            <div className="flex justify-between items-center p-1">
+              <p className="font-black text-black">@{nickname}</p>
+              <button onClick={()=>setShowDashboard(false)} className="text-black text-xl">✕</button>
+            </div>
+
+            <div onClick={()=>{setTab("balance"); setShowDashboard(false);}} className="bg-white rounded-2xl p-3.5 flex justify-between items-center shadow-sm cursor-pointer">
+              <div className="flex items-center gap-3"><span>🪪</span><p className="font-bold text-[14px] text-black">Balance</p></div>
+              <span className="text-zinc-400">›</span>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm divide-y">
+              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>🕐</span><p className="text-[14px] font-bold text-black">Activity centre</p></div><span className="text-zinc-400">›</span></div>
+              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>⬇️</span><p className="text-[14px] font-bold text-black">Offline videos</p></div><span className="text-zinc-400">›</span></div>
+              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>🎵</span><p className="text-[14px] font-bold text-black">Your Music</p></div><span className="text-zinc-400">›</span></div>
+            </div>
+
+            <div className="bg-white rounded-2xl p-3.5 flex justify-between items-center shadow-sm">
+              <div className="flex gap-3 items-center"><span>🔳</span><p className="text-[14px] font-bold text-black">Your QR code</p></div>
+              <span className="text-zinc-400">›</span>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-sm divide-y">
+              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>💡</span><p className="text-[14px] font-bold text-black">Creator Search Insights</p></div><span className="text-zinc-400">›</span></div>
+              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>👥⭐</span><p className="text-[14px] font-bold text-black">Loomi Studio</p></div><span className="text-zinc-400">›</span></div>
+              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>🔥</span><p className="text-[14px] font-bold text-black">Promote</p></div><span className="text-zinc-400">›</span></div>
+              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span className="text-[10px] border px-1">AD</span><p className="text-[14px] font-bold text-black">Ads Manager</p></div><span className="text-zinc-400">›</span></div>
+            </div>
+
+            <div className="bg-white rounded-2xl p-3.5 flex justify-between items-center shadow-sm">
+              <div className="flex gap-3 items-center"><span>⚙️</span><p className="text-[14px] font-bold text-black">Settings and privacy</p></div>
+              <span className="text-zinc-400">›</span>
+            </div>
+          </div>
+        </div>
+      )} 
+      </style>
     </div>
   );
 }
