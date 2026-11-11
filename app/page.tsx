@@ -1,14 +1,12 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
-import { db } from "@/lib/firebase";
+import { db } from "../lib/firebase";
 import { collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp } from "firebase/firestore";
 
 export default function LoomiLive() {
   const [keys, setKeys] = useState(0);
   const [tab, setTab] = useState<"hosters" | "audience">("audience");
-  const [chat, setChat] = useState<any[]>([
-    { user: "kaito_za", msg: "Yo bruvv 🔥" },
-  ]);
+  const [chat, setChat] = useState<any[]>([]);
   const [input, setInput] = useState("");
   const [isVip, setIsVip] = useState(false);
   const [hearts, setHearts] = useState(12.4);
@@ -28,14 +26,14 @@ export default function LoomiLive() {
     { name: "kaito_za", keys: 320, vip: true },
     { name: "lebza__", keys: 1100, vip: true },
     { name: "viewer_01", keys: 50, vip: false },
+    { name: "momo_za", keys: 200, vip: false },
   ];
 
-  // LOAD REAL-TIME CHAT FROM FIREBASE - NO MORE LOOP
   useEffect(() => {
     setKeys(parseInt(localStorage.getItem("loomi_keys") || "0"));
     setIsVip(localStorage.getItem("loomi_vip") === "true");
 
-    const q = query(collection(db, "live_chat"), orderBy("createdAt", "asc"), limit(100));
+    const q = query(collection(db, "live_chat"), orderBy("createdAt", "asc"), limit(150));
     const unsub = onSnapshot(q, (snap) => {
       const msgs = snap.docs.map(d => d.data());
       if(msgs.length > 0) setChat(msgs);
@@ -59,14 +57,10 @@ export default function LoomiLive() {
   const stopLive = () => { streamRef.current?.getTracks().forEach(t => t.stop()); setIsLive(false); };
   const switchCam = async () => { setFacing(f => f === "user" ? "environment" : "user"); setTimeout(goLive, 100); };
 
-  // FIXED SEND - NO LOOP, uses functional + Firebase
   const sendChat = async () => {
     if(!input.trim()) return;
-    const text = input;
+    const text = input.trim();
     setInput("");
-    // Local instant
-    setChat(prev => [...prev, { user: "you", msg: text }]);
-    // Firebase
     try {
       await addDoc(collection(db, "live_chat"), {
         user: "you",
@@ -79,7 +73,6 @@ export default function LoomiLive() {
   const sendGift = (cost: number) => {
     if(keys < cost){ alert("Not enough Keys"); return; }
     const n = keys-cost; localStorage.setItem("loomi_keys", String(n)); setKeys(n); setHearts(h=>+(h+0.1).toFixed(1));
-    setChat(prev => [...prev, { user: "you", msg: `Sent ${cost} Keys gift! 🎁` }]);
   };
 
   const unlockVip = () => {
@@ -167,4 +160,4 @@ export default function LoomiLive() {
       </div>
     </div>
   );
-}
+        }
