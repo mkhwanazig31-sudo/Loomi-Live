@@ -1,5 +1,6 @@
 "use client";
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 import { useEffect, useState, useRef, useMemo } from "react";
 import { db, auth } from "../lib/firebase";
@@ -11,6 +12,17 @@ type Fly = { id: string; emoji: string; x: number; type: string };
 type Post = { id: string; creator: string; caption: string; mediaUrl: string; mediaType?: string; isLocked: boolean; price: number; likes: number; likedBy?: string[]; unlockedBy?: string[]; createdAt?: any; postType?: string; viewOnce?: boolean; expiry?: string };
 type Floater = { id: string; user: string; msg: string; top: number; duration: number; color: string };
 type DMThread = { id: string; userA: string; userB: string; other: string; lastMsg: string; lastAt: number; unread: number };
+
+const safeMediaStream = () => {
+  if (typeof window !== "undefined" && typeof MediaStream !== "undefined") return new MediaStream();
+  return null;
+};
+const safeLocal = (key: string) => {
+  try { return localStorage.getItem(key); } catch { return null; }
+};
+const safeLocalJson = (key: string, fallback: any) => {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
+};
 
 export default function LoomiLive() {
   const [authUser, setAuthUser] = useState<any>(null);
@@ -40,7 +52,7 @@ export default function LoomiLive() {
   const [postPrice, setPostPrice] = useState(20);
   const [postType, setPostType] = useState<"post"|"meme"|"video">("post");
   const [feedFilter, setFeedFilter] = useState<"foryou"|"following"|"trending"|"saved">("foryou");
-  const [savedPosts, setSavedPosts] = useState<string[]>(()=>{ try{ return JSON.parse(localStorage.getItem("loomi_saved")||"[]"); }catch{ return []; } });
+  const [savedPosts, setSavedPosts] = useState<string[]>(()=> safeLocalJson("loomi_saved", []));
   const [postComments, setPostComments] = useState<Record<string, any[]>>({});
   const [openComments, setOpenComments] = useState<string | null>(null);
   const [commentInput, setCommentInput] = useState("");
@@ -50,17 +62,15 @@ export default function LoomiLive() {
   const [createStep, setCreateStep] = useState<0|1>(0);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // ===== 18+ / RULES / T&C =====
-  const [ageConfirmed, setAgeConfirmed] = useState(()=>{ try{ return localStorage.getItem("loomi_18")==="yes"; }catch{ return false; } });
+  const [ageConfirmed, setAgeConfirmed] = useState(()=>{ try{ return safeLocal("loomi_18")==="yes"; }catch{ return false; } });
   const [ageDenied, setAgeDenied] = useState(false);
-  const [showTerms, setShowTerms] = useState(()=>{ try{ return !localStorage.getItem("loomi_terms"); }catch{ return true; } });
-  const [termsAccepted, setTermsAccepted] = useState(()=>{ try{ return localStorage.getItem("loomi_terms")==="yes"; }catch{ return false; } });
+  const [showTerms, setShowTerms] = useState(()=>{ try{ return !safeLocal("loomi_terms"); }catch{ return true; } });
+  const [termsAccepted, setTermsAccepted] = useState(()=>{ try{ return safeLocal("loomi_terms")==="yes"; }catch{ return false; } });
   const [showRules, setShowRules] = useState(false);
   const [agreeAge, setAgreeAge] = useState(false);
   const [agreeTerms, setAgreeTerms] = useState(false);
-  // ===== DM - HOST CHOOSES PAID OR ANYONE =====
   const [dmThreads, setDmThreads] = useState<DMThread[]>([]);
-  const [openDM, setOpenDM] = useState<string | null>(null); // other username
+  const [openDM, setOpenDM] = useState<string | null>(null);
   const [dmMessages, setDmMessages] = useState<any[]>([]);
   const [dmInput, setDmInput] = useState("");
   const [dmMedia, setDmMedia] = useState("");
@@ -68,17 +78,16 @@ export default function LoomiLive() {
   const [dmPrice, setDmPrice] = useState(20);
   const [hostDmMode, setHostDmMode] = useState<"paid"|"free"|"followers"|"off">("paid");
   const [hostDmPrice, setHostDmPrice] = useState(30);
-  const [dmPaidFor, setDmPaidFor] = useState<string[]>(()=>{ try{ return JSON.parse(localStorage.getItem("loomi_dm_paid")||"[]"); }catch{ return []; } });
+  const [dmPaidFor, setDmPaidFor] = useState<string[]>(()=> safeLocalJson("loomi_dm_paid", []));
   const [dmOtherMode, setDmOtherMode] = useState<"paid"|"free"|"followers"|"off">("paid");
   const [dmOtherPrice, setDmOtherPrice] = useState(30);
-  // ===== PRIVACY =====
   const [privacySettings, setPrivacySettings] = useState({ faceBlur: false, privateProfile: false, blockDownloads: false, hideLocation: true, hideOnline: false });
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [isScreenHidden, setIsScreenHidden] = useState(false);
   const [screenshotWarning, setScreenshotWarning] = useState("");
   const [postViewOnce, setPostViewOnce] = useState(false);
   const [postExpiry, setPostExpiry] = useState("Forever");
-  const [viewOnceViewed, setViewOnceViewed] = useState<string[]>(()=>{ try{ return JSON.parse(localStorage.getItem("loomi_viewonce")||"[]"); }catch{ return []; } });
+  const [viewOnceViewed, setViewOnceViewed] = useState<string[]>(()=> safeLocalJson("loomi_viewonce", []));
   const [showVipModal, setShowVipModal] = useState(false);
   const [vipPrice, setVipPrice] = useState(100);
   const [vipActive, setVipActive] = useState(false);
@@ -100,18 +109,18 @@ export default function LoomiLive() {
   const [showFloaters, setShowFloaters] = useState(true);
   const [chatError, setChatError] = useState("");
   const [camError, setCamError] = useState("");
-  const [blockedUsers, setBlockedUsers] = useState<string[]>(()=>{ try{ return JSON.parse(localStorage.getItem("loomi_blocked")||"[]"); }catch{ return []; } });
+  const [blockedUsers, setBlockedUsers] = useState<string[]>(()=> safeLocalJson("loomi_blocked", []));
   const [showSafety, setShowSafety] = useState<string | null>(null);
   const [reportReason, setReportReason] = useState("Rude / Harassment");
-  const [following, setFollowing] = useState<string[]>(()=>{ try{ return JSON.parse(localStorage.getItem("loomi_following")||"[]"); }catch{ return []; } });
+  const [following, setFollowing] = useState<string[]>(()=> safeLocalJson("loomi_following", []));
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifs, setShowNotifs] = useState(false);
   const [notifiedLive, setNotifiedLive] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
-  const [userCategory, setUserCategory] = useState(()=> { try{ return localStorage.getItem("loomi_category") || "Chat"; }catch{ return "Chat"; } });
-  const [dailyClaimed, setDailyClaimed] = useState(()=> { try{ return localStorage.getItem("loomi_daily") === new Date().toDateString(); }catch{ return false; } });
-  const [showWelcome, setShowWelcome] = useState(()=> { try{ return !localStorage.getItem("loomi_seen_welcome"); }catch{ return false; } });
+  const [userCategory, setUserCategory] = useState(()=>{ try{ return safeLocal("loomi_category") || "Chat"; }catch{ return "Chat"; } });
+  const [dailyClaimed, setDailyClaimed] = useState(()=>{ try{ return safeLocal("loomi_daily") === new Date().toDateString(); }catch{ return false; } });
+  const [showWelcome, setShowWelcome] = useState(()=>{ try{ return !safeLocal("loomi_seen_welcome"); }catch{ return false; } });
   const videoRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -131,17 +140,17 @@ export default function LoomiLive() {
           const snap = await getDocs(query(collection(db, "loomi_users"), where("uid","==", user.uid)));
           if(!snap.empty){
             const data = snap.docs[0].data() as any;
-            setNickname(data.username); nicknameRef.current = data.username; localStorage.setItem("loomi_nickname", data.username);
-            if(data.keys !== undefined){ setKeys(data.keys); localStorage.setItem("loomi_keys", data.keys.toString()); }
+            setNickname(data.username); nicknameRef.current = data.username; try{ localStorage.setItem("loomi_nickname", data.username); }catch{}
+            if(data.keys !== undefined){ setKeys(data.keys); try{ localStorage.setItem("loomi_keys", data.keys.toString()); }catch{} }
             if(data.category) setUserCategory(data.category);
-            if(data.following) { setFollowing(data.following); localStorage.setItem("loomi_following", JSON.stringify(data.following)); }
+            if(data.following) { setFollowing(data.following); try{ localStorage.setItem("loomi_following", JSON.stringify(data.following)); }catch{} }
             if(data.privacy) setPrivacySettings({ faceBlur: false, privateProfile: !!data.privacy.privateProfile, blockDownloads: !!data.privacy.blockDownloads, hideLocation: data.privacy.hideLocation!==false, hideOnline: !!data.privacy.hideOnline });
-            if(data.privacy?.privateProfile) localStorage.setItem("loomi_private_"+data.username, "1"); else localStorage.removeItem("loomi_private_"+data.username);
+            if(data.privacy?.privateProfile) try{ localStorage.setItem("loomi_private_"+data.username, "1"); }catch{} else try{ localStorage.removeItem("loomi_private_"+data.username); }catch{}
             if(data.dmMode) setHostDmMode(data.dmMode);
             if(data.dmPrice) setHostDmPrice(data.dmPrice);
           }
         }catch(e){ console.log("profile load", e); }
-        try{ const saved = localStorage.getItem("loomi_privacy"); if(saved) setPrivacySettings(JSON.parse(saved)); }catch{}
+        try{ const saved = safeLocal("loomi_privacy"); if(saved) setPrivacySettings(JSON.parse(saved)); }catch{}
       } else { setAuthUser(null); setNickname(""); nicknameRef.current = ""; }
     });
     return ()=>unsub();
@@ -170,18 +179,22 @@ export default function LoomiLive() {
       else setAuthError(e.message || "Auth error - try again");
     }
   };
-  const handleLogout = async () => { try{ await signOut(auth); }catch{} localStorage.clear(); location.reload(); };
+  const handleLogout = async () => { try{ await signOut(auth); }catch{} try{ localStorage.clear(); }catch{} if(typeof window!=="undefined") location.reload(); };
   useEffect(() => { nicknameRef.current = nickname; }, [nickname]);
-  useEffect(() => { if (typeof window !== "undefined") remoteStreamRef.current = new MediaStream(); }, []);
-  useEffect(() => { if(isLive && streamRef.current && videoRef.current){ videoRef.current.srcObject = streamRef.current; videoRef.current.muted = true; videoRef.current.play().catch(()=>{}); } }, [isLive]);
-  // ===== SCREENSHOT PROTECTION - COMPULSORY =====
   useEffect(() => {
-    const onVisibility = () => { if(document.hidden){ setIsScreenHidden(true); setScreenshotWarning("⚠️ Screenshot / Recording blocked - Loomi-live Privacy"); } else { setTimeout(()=>{ setIsScreenHidden(false); setScreenshotWarning(""); }, 800); } };
+    // FIXED: was new MediaStream() on server -> crash. Now guarded.
+    const ms = safeMediaStream();
+    if (ms) remoteStreamRef.current = ms;
+  }, []);
+  useEffect(() => { if(isLive && streamRef.current && videoRef.current){ videoRef.current.srcObject = streamRef.current; videoRef.current.muted = true; videoRef.current.play().catch(()=>{}); } }, [isLive]);
+  useEffect(() => {
+    const onVisibility = () => { if(typeof document==="undefined") return; if(document.hidden){ setIsScreenHidden(true); setScreenshotWarning("⚠️ Screenshot / Recording blocked - Loomi-live Privacy"); } else { setTimeout(()=>{ setIsScreenHidden(false); setScreenshotWarning(""); }, 800); } };
     const onBlur = () => setIsScreenHidden(true);
     const onFocus = () => setTimeout(()=>setIsScreenHidden(false), 800);
     const onKeyDown = (e: KeyboardEvent) => { if(e.key==="PrintScreen" || ((e.ctrlKey||e.metaKey) && ["p","s","u"].includes(e.key.toLowerCase()))){ e.preventDefault(); setScreenshotWarning("⚠️ Screenshot blocked - This content is private"); setTimeout(()=>setScreenshotWarning(""), 3000); try{ navigator.clipboard?.writeText("Loomi-live - Private content protected"); }catch{} } };
     const onContext = (e: Event) => { if(privacySettings.blockDownloads) e.preventDefault(); };
     const onCopy = (e: Event) => { if(privacySettings.blockDownloads){ e.preventDefault(); setScreenshotWarning("⚠️ Copy blocked"); setTimeout(()=>setScreenshotWarning(""), 2000); } };
+    if(typeof document==="undefined" || typeof window==="undefined") return;
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("blur", onBlur);
     window.addEventListener("focus", onFocus);
@@ -199,7 +212,6 @@ export default function LoomiLive() {
       setTimeout(()=>setScreenshotWarning(""), 4000);
     }
   };
-  // ===== DM LISTENERS =====
   useEffect(() => {
     if(!nickname) return;
     const q1 = query(collection(db, "loomi_dm_threads"), where("members", "array-contains", nickname));
@@ -220,7 +232,6 @@ export default function LoomiLive() {
   const getDmThreadId = (other: string) => [nicknameRef.current, other].sort().join("__");
   const openDMWith = async (other: string) => {
     if(other===nickname) return;
-    // Check host DM mode - fetch host profile
     try{
       const snap = await getDocs(query(collection(db, "loomi_users"), where("username","==", other)));
       if(!snap.empty){ const data = snap.docs[0].data() as any; setDmOtherMode(data.dmMode || "paid"); setDmOtherPrice(data.dmPrice || 30); }
@@ -230,8 +241,8 @@ export default function LoomiLive() {
   const payForDM = async (other: string) => {
     if(dmPaidFor.includes(other)) return true;
     if(keys < dmOtherPrice){ setShowRecharge(true); return false; }
-    const newKeys = keys - dmOtherPrice; setKeys(newKeys); localStorage.setItem("loomi_keys", newKeys.toString());
-    const next = [...dmPaidFor, other]; setDmPaidFor(next); localStorage.setItem("loomi_dm_paid", JSON.stringify(next));
+    const newKeys = keys - dmOtherPrice; setKeys(newKeys); try{ localStorage.setItem("loomi_keys", newKeys.toString()); }catch{}
+    const next = [...dmPaidFor, other]; setDmPaidFor(next); try{ localStorage.setItem("loomi_dm_paid", JSON.stringify(next)); }catch{}
     try{ await addDoc(collection(db, "loomi_dm_payments"), { payer: nicknameRef.current, host: other, amount: dmOtherPrice, createdAt: serverTimestamp() }); }catch{}
     return true;
   };
@@ -239,7 +250,6 @@ export default function LoomiLive() {
     if(!openDM) return;
     const t = dmInput.trim();
     if(!t && !dmMedia) return;
-    // Host rules check
     if(dmOtherMode==="off") return alert(`@${openDM} has DM OFF`);
     if(dmOtherMode==="followers" && !following.includes(openDM) && openDM!==nickname) return alert(`You must follow @${openDM} to DM them`);
     if(dmOtherMode==="paid" && !dmPaidFor.includes(openDM) && openDM!==nickname){
@@ -254,12 +264,12 @@ export default function LoomiLive() {
   const unlockDM = async (m: any) => {
     if(m.unlockedBy?.includes(nicknameRef.current) || m.sender===nicknameRef.current) return;
     if(keys < m.price){ setShowRecharge(true); return; }
-    const newKeys = keys - m.price; setKeys(newKeys); localStorage.setItem("loomi_keys", newKeys.toString());
+    const newKeys = keys - m.price; setKeys(newKeys); try{ localStorage.setItem("loomi_keys", newKeys.toString()); }catch{}
     await updateDoc(doc(db, "loomi_dm_messages", m.id), { unlockedBy: [...(m.unlockedBy||[]), nicknameRef.current] });
     await addDoc(collection(db, "loomi_unlocks"), { user: nicknameRef.current, creator: m.sender, postId: m.id, amount: m.price, createdAt: serverTimestamp() });
   };
   const saveDmSettings = async () => {
-    localStorage.setItem("loomi_dm_mode", hostDmMode); localStorage.setItem("loomi_dm_price", hostDmPrice.toString());
+    try{ localStorage.setItem("loomi_dm_mode", hostDmMode); localStorage.setItem("loomi_dm_price", hostDmPrice.toString()); }catch{}
     if(authUser){ try{ await updateDoc(doc(db, "loomi_users", authUser.uid), { dmMode: hostDmMode, dmPrice: hostDmPrice }); }catch{} }
     alert(`DM Settings saved: ${hostDmMode.toUpperCase()} ${hostDmMode==="paid" ? `- ${hostDmPrice} 🪙 to start DM` : ""}`);
   };
@@ -382,33 +392,35 @@ export default function LoomiLive() {
   };
   const watchHost = async (hostNick: string) => {
     if(!ageConfirmed) return alert("18+ only");
-    if(isLive) await stopLive(); pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear(); remoteStreamRef.current = new MediaStream(); setWatching(hostNick); setTab("live"); setChat([]); setFloaters([]); seenChatRef.current.clear();
-    const pc = new RTCPeerConnection(ICE); pcsRef.current.set(hostNick, pc); if(remoteRef.current) remoteRef.current.srcObject = remoteStreamRef.current;
-    pc.ontrack = (e) => { remoteStreamRef.current?.addTrack(e.track); if(remoteRef.current && remoteStreamRef.current){ remoteRef.current.srcObject = remoteStreamRef.current; remoteRef.current.play().catch(()=>{ if(remoteRef.current){ remoteRef.current.muted=true; remoteRef.current.play(); } }); } };
+    if(isLive) await stopLive(); pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear();
+    const ms = safeMediaStream(); if(ms) remoteStreamRef.current = ms;
+    setWatching(hostNick); setTab("live"); setChat([]); setFloaters([]); seenChatRef.current.clear();
+    const pc = new RTCPeerConnection(ICE); pcsRef.current.set(hostNick, pc); if(remoteRef.current && remoteStreamRef.current) remoteRef.current.srcObject = remoteStreamRef.current;
+    pc.ontrack = (e) => { if(remoteStreamRef.current) remoteStreamRef.current.addTrack(e.track); if(remoteRef.current && remoteStreamRef.current){ remoteRef.current.srcObject = remoteStreamRef.current; remoteRef.current.play().catch(()=>{ if(remoteRef.current){ remoteRef.current.muted=true; remoteRef.current.play(); } }); } };
     pc.onicecandidate = e => { if(e.candidate) addDoc(collection(db, `live_rooms/${hostNick}/viewers/${nicknameRef.current}/candidates_viewer`), { candidate: e.candidate.toJSON() }); };
     onSnapshot(collection(db, `live_rooms/${hostNick}/viewers/${nicknameRef.current}/candidates_host`), s => { s.docChanges().forEach(async ch=>{ if(ch.type==="added"){ try{ await pc.addIceCandidate(new RTCIceCandidate(ch.doc.data().candidate)); }catch{} } }); });
     pc.addTransceiver("video", { direction: "recvonly" }); pc.addTransceiver("audio", { direction: "recvonly" }); const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
     await setDoc(doc(db, `live_rooms/${hostNick}/viewers/${nicknameRef.current}`), { viewer: nicknameRef.current, offer: { sdp: offer.sdp, type: offer.type }, createdAt: serverTimestamp() });
     onSnapshot(doc(db, `live_rooms/${hostNick}/viewers/${nicknameRef.current}`), async snap => { const data=snap.data() as any; if(data?.answer && pc.signalingState==="have-local-offer"){ await pc.setRemoteDescription(new RTCSessionDescription(data.answer)); } });
   };
-  const stopWatching = async () => { pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear(); if(remoteRef.current) remoteRef.current.srcObject=null; remoteStreamRef.current = new MediaStream(); const w=watching; setWatching(null); try{ if(w) await deleteDoc(doc(db, `live_rooms/${w}/viewers/${nicknameRef.current}`)); }catch{} setChat([]); setFloaters([]); seenChatRef.current.clear(); setVipActive(false); setVipWith(null); };
-  const blockUser = (user: string) => { if(!blockedUsers.includes(user)){ const next = [...blockedUsers, user]; setBlockedUsers(next); localStorage.setItem("loomi_blocked", JSON.stringify(next)); } setShowSafety(null); alert(`@${user} blocked - you won't see their chat`); };
-  const unblockUser = (user: string) => { const next = blockedUsers.filter(u=>u!==user); setBlockedUsers(next); localStorage.setItem("loomi_blocked", JSON.stringify(next)); };
+  const stopWatching = async () => { pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear(); if(remoteRef.current) remoteRef.current.srcObject=null; const ms = safeMediaStream(); if(ms) remoteStreamRef.current = ms; const w=watching; setWatching(null); try{ if(w) await deleteDoc(doc(db, `live_rooms/${w}/viewers/${nicknameRef.current}`)); }catch{} setChat([]); setFloaters([]); seenChatRef.current.clear(); setVipActive(false); setVipWith(null); };
+  const blockUser = (user: string) => { if(!blockedUsers.includes(user)){ const next = [...blockedUsers, user]; setBlockedUsers(next); try{ localStorage.setItem("loomi_blocked", JSON.stringify(next)); }catch{} } setShowSafety(null); alert(`@${user} blocked`); };
+  const unblockUser = (user: string) => { const next = blockedUsers.filter(u=>u!==user); setBlockedUsers(next); try{ localStorage.setItem("loomi_blocked", JSON.stringify(next)); }catch{} };
   const reportUser = async (user: string) => { try{ await addDoc(collection(db, "loomi_reports"), { reporter: nicknameRef.current, reported: user, room: currentRoom, reason: reportReason, createdAt: serverTimestamp() }); }catch(e){ console.log(e); } setShowSafety(null); alert(`Reported @${user} for ${reportReason}`); };
   const toggleFollow = async (user: string) => {
     if(user===nickname) return; const isFollowing = following.includes(user); const next = isFollowing ? following.filter(u=>u!==user) : [...following, user];
-    setFollowing(next); localStorage.setItem("loomi_following", JSON.stringify(next));
+    setFollowing(next); try{ localStorage.setItem("loomi_following", JSON.stringify(next)); }catch{}
     if(authUser) { try{ await updateDoc(doc(db, "loomi_users", authUser.uid), { following: next }); }catch{} }
     if(!isFollowing){ try{ await addDoc(collection(db, "loomi_follows"), { follower: nicknameRef.current, following: user, createdAt: serverTimestamp() }); }catch{} setNotifications(prev=>[{ id: Date.now().toString(), text: `You followed @${user} ✅`, user, time: Date.now() }, ...prev].slice(0,20)); }
   };
-  const claimDaily = () => { if(dailyClaimed) return; const newKeys = keys + 10; setKeys(newKeys); localStorage.setItem("loomi_keys", newKeys.toString()); localStorage.setItem("loomi_daily", new Date().toDateString()); setDailyClaimed(true); alert("🎉 Daily Bonus +10 🪙 claimed! Come back tomorrow."); };
-  const shareApp = async () => { const text = `Join me on LOOMI-LIVE 🔴✨ - 18+ Live, Chat, Earn! My username is @${nickname} - ${window.location.origin}`; try{ if(navigator.share){ await navigator.share({ title: "LOOMI-LIVE 18+", text, url: window.location.origin }); } else { await navigator.clipboard.writeText(text); alert("Link copied! Share it on WhatsApp / TikTok"); } }catch{ try{ await navigator.clipboard.writeText(text); alert("Link copied!"); }catch{} } };
+  const claimDaily = () => { if(dailyClaimed) return; const newKeys = keys + 10; setKeys(newKeys); try{ localStorage.setItem("loomi_keys", newKeys.toString()); localStorage.setItem("loomi_daily", new Date().toDateString()); }catch{} setDailyClaimed(true); alert("🎉 Daily Bonus +10 🪙 claimed!"); };
+  const shareApp = async () => { const origin = typeof window!=="undefined" ? window.location.origin : ""; const text = `Join me on LOOMI-LIVE 🔴✨ - 18+ Live, Chat, Earn! My username is @${nickname} - ${origin}`; try{ if(navigator.share){ await navigator.share({ title: "LOOMI-LIVE 18+", text, url: origin }); } else { await navigator.clipboard.writeText(text); alert("Link copied!"); } }catch{ try{ await navigator.clipboard.writeText(text); alert("Link copied!"); }catch{} } };
   const sendChat = async () => {
-    const t = input.trim(); if(!t) return; const room = currentRoom || (isLive ? nickname : watching); if(!room) return alert("Go LIVE or watch someone first to comment"); const myUser = nicknameRef.current || nickname; setInput("");
+    const t = input.trim(); if(!t) return; const room = currentRoom || (isLive ? nickname : watching); if(!room) return alert("Go LIVE or watch someone first"); const myUser = nicknameRef.current || nickname; setInput("");
     const localMsg = { id: "local-"+Date.now(), room, user: myUser, msg: t, createdAt: { seconds: Date.now()/1000 } }; setChat(prev => [...prev, localMsg]); addFloater(myUser, t); autoReportScreenshot(myUser, t);
     try { await addDoc(collection(db,"live_chat"), { room, user: myUser, msg: t, createdAt: serverTimestamp(), ts: Date.now() }); } catch(e:any) { setChatError("Saved locally only - check Firestore Rules"); }
   };
-  const sendGift = async (cost:number, emoji:string) => { if(!currentRoom) return alert("Go live or watch first"); if(keys < cost) { setShowRecharge(true); return; } if(cost>0){ const newKeys = keys - cost; setKeys(newKeys); localStorage.setItem("loomi_keys", newKeys.toString()); } triggerGift(emoji); try{ await addDoc(collection(db,"live_chat"), { room: currentRoom, user:nicknameRef.current, msg:`sent ${emoji}`, gift:emoji, cost, createdAt: serverTimestamp(), ts: Date.now() }); }catch{} };
+  const sendGift = async (cost:number, emoji:string) => { if(!currentRoom) return alert("Go live or watch first"); if(keys < cost) { setShowRecharge(true); return; } if(cost>0){ const newKeys = keys - cost; setKeys(newKeys); try{ localStorage.setItem("loomi_keys", newKeys.toString()); }catch{} } triggerGift(emoji); try{ await addDoc(collection(db,"live_chat"), { room: currentRoom, user:nicknameRef.current, msg:`sent ${emoji}`, gift:emoji, cost, createdAt: serverTimestamp(), ts: Date.now() }); }catch{} };
   const isVideoUrl = (url: string) => /\.(mp4|webm|mov)(\?|$)/i.test(url) || url.includes("video");
   const getMediaType = (url: string, type: string) => { if(type==="video") return "video"; if(!url) return "text"; if(isVideoUrl(url) || url.startsWith("data:video")) return "video"; return "image"; };
   const handleFileUpload = (e: any) => {
@@ -432,11 +444,11 @@ export default function LoomiLive() {
     await addDoc(collection(db, "loomi_posts"), { creator: nicknameRef.current, caption: postCaption.trim(), mediaUrl: postMedia.trim(), mediaType, postType, isLocked: postLocked, price: postLocked ? postPrice : 0, likes: 0, likedBy: [], unlockedBy: [], viewOnce: postViewOnce, expiry: postExpiry, createdAt: serverTimestamp() });
     setPostCaption(""); setPostMedia(""); setPostLocked(false); setPostPrice(20); setPostType("post"); setPostViewOnce(false); setPostExpiry("Forever"); setCreateStep(0);
   };
-  const markViewOnce = (id: string) => { if(!viewOnceViewed.includes(id)){ const next = [...viewOnceViewed, id]; setViewOnceViewed(next); localStorage.setItem("loomi_viewonce", JSON.stringify(next)); } };
+  const markViewOnce = (id: string) => { if(!viewOnceViewed.includes(id)){ const next = [...viewOnceViewed, id]; setViewOnceViewed(next); try{ localStorage.setItem("loomi_viewonce", JSON.stringify(next)); }catch{} } };
   const unlockPost = async (p: Post) => {
     if(p.unlockedBy?.includes(nicknameRef.current) || p.creator === nicknameRef.current) return;
     if(keys < p.price){ setShowRecharge(true); return; }
-    const newKeys = keys - p.price; setKeys(newKeys); localStorage.setItem("loomi_keys", newKeys.toString());
+    const newKeys = keys - p.price; setKeys(newKeys); try{ localStorage.setItem("loomi_keys", newKeys.toString()); }catch{}
     await updateDoc(doc(db, "loomi_posts", p.id), { unlockedBy: [...(p.unlockedBy||[]), nicknameRef.current] });
     await addDoc(collection(db, "loomi_unlocks"), { user: nicknameRef.current, creator: p.creator, postId: p.id, amount: p.price, createdAt: serverTimestamp() });
   };
@@ -446,12 +458,12 @@ export default function LoomiLive() {
     await updateDoc(doc(db, "loomi_posts", p.id), { likes: Math.max(0, (p.likes||0) + (already ? -1 : 1)), likedBy: newLiked });
   };
   const tipPost = async (p: Post) => { await sendGift(5, "💎"); await addDoc(collection(db, "loomi_tips"), { sender: nicknameRef.current, creator: p.creator, postId: p.id, amount: 5, createdAt: serverTimestamp() }); };
-  const toggleSavePost = (id: string) => { const next = savedPosts.includes(id) ? savedPosts.filter(x=>x!==id) : [...savedPosts, id]; setSavedPosts(next); localStorage.setItem("loomi_saved", JSON.stringify(next)); };
-  const sharePost = async (p: Post) => { const text = `🔥 Check this on LOOMI-LIVE by @${p.creator}: ${p.caption} - ${window.location.origin}`; try{ if(navigator.share) await navigator.share({ title: "LOOMI-LIVE", text, url: window.location.origin }); else { await navigator.clipboard.writeText(text); alert("Post link copied! Share on WhatsApp / TikTok"); } }catch{ await navigator.clipboard.writeText(text); alert("Post link copied!"); } };
+  const toggleSavePost = (id: string) => { const next = savedPosts.includes(id) ? savedPosts.filter(x=>x!==id) : [...savedPosts, id]; setSavedPosts(next); try{ localStorage.setItem("loomi_saved", JSON.stringify(next)); }catch{} };
+  const sharePost = async (p: Post) => { const origin = typeof window!=="undefined" ? window.location.origin : ""; const text = `🔥 Check this on LOOMI-LIVE by @${p.creator}: ${p.caption} - ${origin}`; try{ if(navigator.share) await navigator.share({ title: "LOOMI-LIVE", text, url: origin }); else { await navigator.clipboard.writeText(text); alert("Post link copied!"); } }catch{ await navigator.clipboard.writeText(text); alert("Post link copied!"); } };
   const sendPostComment = async (postId: string) => { const t = commentInput.trim(); if(!t) return; await addDoc(collection(db, "loomi_post_comments"), { postId, user: nicknameRef.current, msg: t, createdAt: serverTimestamp() }); setCommentInput(""); autoReportScreenshot(nicknameRef.current, t); };
   const requestPrivate = async () => {
     if(!watching) return alert("Watch someone first"); if(keys < vipPrice){ setShowRecharge(true); return; }
-    const newKeys = keys - vipPrice; setKeys(newKeys); localStorage.setItem("loomi_keys", newKeys.toString());
+    const newKeys = keys - vipPrice; setKeys(newKeys); try{ localStorage.setItem("loomi_keys", newKeys.toString()); }catch{}
     await addDoc(collection(db, "loomi_private"), { host: watching, viewer: nicknameRef.current, price: vipPrice, status: "pending", createdAt: serverTimestamp() });
     setShowVipModal(false); setVipStatus("Request sent - waiting for host...");
   };
@@ -479,13 +491,13 @@ export default function LoomiLive() {
   }, [posts, searchQuery, feedFilter, following, savedPosts, nickname]);
   const renderHashtags = (text: string) => text.split(" ").map((w,i)=> w.startsWith("#") ? <span key={i} className="text-[#FFD700] font-bold">{w} </span> : w+" ");
   const savePrivacy = async () => {
-    localStorage.setItem("loomi_privacy", JSON.stringify(privacySettings));
-    if(privacySettings.privateProfile) localStorage.setItem("loomi_private_"+nickname, "1"); else localStorage.removeItem("loomi_private_"+nickname);
+    try{ localStorage.setItem("loomi_privacy", JSON.stringify(privacySettings)); }catch{}
+    try{ if(privacySettings.privateProfile) localStorage.setItem("loomi_private_"+nickname, "1"); else localStorage.removeItem("loomi_private_"+nickname); }catch{}
     if(authUser){ try{ await updateDoc(doc(db, "loomi_users", authUser.uid), { privacy: privacySettings }); }catch{} }
     setShowPrivacy(false); alert("Privacy saved ✅");
   };
+  const isProfilePrivate = (u: string) => { try{ return localStorage.getItem("loomi_private_"+u)==="1"; }catch{ return false; } };
 
-  // ===== 18+ AGE GATE - FIRST SCREEN =====
   if(!ageConfirmed && !ageDenied) return (
     <div className="min-h-screen bg-[#150826] text-white flex items-center justify-center max-w-[430px] mx-auto p-6">
       <div className="w-full text-center">
@@ -493,14 +505,14 @@ export default function LoomiLive() {
         <h1 className="text-[32px] font-black mt-2">18+ ONLY 🔞</h1>
         <p className="text-sm text-white/60 mt-2">This app contains adult live streams, private chats and paid content. You must be 18 or older to enter.</p>
         <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-4 mt-4 text-left text-xs space-y-2"><p>✅ I am 18 years or older</p><p>✅ I agree to Rules & T's & C's</p><p>✅ I will not share screenshots / recordings</p><p>✅ I will respect hosts & other users</p></div>
-        <button onClick={()=>{ localStorage.setItem("loomi_18","yes"); setAgeConfirmed(true); setShowTerms(true); }} className="w-full mt-4 bg-[#FFD700] text-black py-4 rounded-2xl font-black">I AM 18+ - ENTER 🔞</button>
+        <button onClick={()=>{ try{ localStorage.setItem("loomi_18","yes"); }catch{} setAgeConfirmed(true); setShowTerms(true); }} className="w-full mt-4 bg-[#FFD700] text-black py-4 rounded-2xl font-black">I AM 18+ - ENTER 🔞</button>
         <button onClick={()=>setAgeDenied(true)} className="w-full mt-3 bg-[#241040] border border-[#3A1B63] py-3 rounded-2xl font-bold text-sm">I am UNDER 18 - Leave</button>
         <button onClick={()=>setShowRules(true)} className="w-full mt-3 text-[#FFD700] text-xs underline">Read Rules & T's & C's First</button>
         {showRules && <div className="mt-4 bg-[#1E0B36] border border-[#FFD700] rounded-2xl p-4 text-left text-xs space-y-2 max-h-[300px] overflow-y-auto"><h2 className="font-black text-center">LOOMI-LIVE - RULES & T's & C's - 18+</h2><p><b>1. 18+ ONLY:</b> You must be 18+. No minors. If we find under-18, account deleted immediately.</p><p><b>2. CONSENT:</b> Everything is consensual. No means no. Harassment = ban.</p><p><b>3. NO RECORDING:</b> No screenshots, screen recording, or leaking private / DM / VIP content. Leak = permanent ban + watermark traces you.</p><p><b>4. NO REAL INFO:</b> Don't share phone, address, ID, bank details in chat. Use in-app coins only.</p><p><b>5. NO ILLEGAL CONTENT:</b> No non-consensual content, no minors, no violence, no hate.</p><p><b>6. COINS:</b> Coins are for tipping / unlocking. No refunds except if host doesn't deliver private. Cashout min 50 coins, paid weekly.</p><p><b>7. HOSTS:</b> Hosts set their own DM price, VIP price, and rules. Respect host's DM mode.</p><p><b>8. REPORT:</b> Report abuse with 1 tap. We review and ban.</p><p><b>9. PRIVACY:</b> Watermark is compulsory. Your @username is on every screenshot.</p><p><b>10. LIABILITY:</b> Loomi-live is a platform. Users are responsible for their own content. By entering you accept these terms.</p><button onClick={()=>setShowRules(false)} className="w-full mt-2 bg-[#FFD700] text-black py-2 rounded-full font-black">Close</button></div>}
       </div>
     </div>
   );
-  if(ageDenied) return (<div className="min-h-screen bg-black text-white flex items-center justify-center max-w-[430px] mx-auto p-6 text-center"><div><p className="text-5xl">🔞</p><h1 className="font-black text-xl mt-3">Sorry, 18+ Only</h1><p className="text-sm text-white/60 mt-2">Loomi-live is for adults only. Come back when you are 18.</p><button onClick={()=>{ localStorage.removeItem("loomi_18"); setAgeDenied(false); }} className="mt-4 text-[#FFD700] text-xs underline">I made a mistake - Go back</button></div></div>);
+  if(ageDenied) return (<div className="min-h-screen bg-black text-white flex items-center justify-center max-w-[430px] mx-auto p-6 text-center"><div><p className="text-5xl">🔞</p><h1 className="font-black text-xl mt-3">Sorry, 18+ Only</h1><p className="text-sm text-white/60 mt-2">Loomi-live is for adults only. Come back when you are 18.</p><button onClick={()=>{ try{ localStorage.removeItem("loomi_18"); }catch{} setAgeDenied(false); }} className="mt-4 text-[#FFD700] text-xs underline">I made a mistake - Go back</button></div></div>);
   if(authLoading) return (<div className="min-h-screen bg-[#150826] text-white flex items-center justify-center max-w-[430px] mx-auto"><p className="font-black text-[#FFD700]">LOOMI-LIVE loading...</p></div>);
   if(!authUser) return (
     <div className="min-h-screen bg-[#150826] text-white flex items-center justify-center max-w-[430px] mx-auto p-6">
@@ -554,14 +566,13 @@ export default function LoomiLive() {
       {vipStatus && <div className="bg-[#241040] border-b border-[#3A1B63] px-3 py-1.5 text-[11px] text-[#FFD700] text-center">{vipStatus}</div>}
       {camError && <div className="bg-red-600 px-3 py-2 text-[11px] text-center font-bold">{camError} • <button onClick={()=>{ setCamError(""); goLive(); }} className="underline">Tap to Retry</button></div>}
 
-      {/* DM INBOX */}
       {tab==="dm" && !openDM && (
         <div className="flex-1 bg-[#150826] overflow-y-auto pb-[80px] p-3">
           <h2 className="font-black text-lg">💬 DM Inbox - 18+</h2>
           <p className="text-xs text-white/50">Your DM Mode: <b className="text-[#FFD700]">{hostDmMode.toUpperCase()}</b> {hostDmMode==="paid" && `- ${hostDmPrice} 🪙 to DM you`} • <button onClick={()=>setShowPrivacy(true)} className="underline text-[#FFD700]">Change in Privacy</button></p>
           <div className="bg-[#241040] border border-[#FFD700]/40 rounded-2xl p-3 mt-3"><p className="text-xs font-black">Your DM Settings - HOST CHOOSES</p><div className="flex gap-2 mt-2 flex-wrap">{(["paid","free","followers","off"] as const).map(m=><button key={m} onClick={()=>setHostDmMode(m)} className={`px-3 py-2 rounded-full text-xs font-bold capitalize ${hostDmMode===m?"bg-[#FFD700] text-black":"bg-[#150826] border border-[#3A1B63]"}`}>{m==="paid"?"💰 Paid":m==="free"?"🆓 Anyone Free":m==="followers"?"👥 Followers Only":"🚫 OFF"}</button>)}</div>{hostDmMode==="paid" && <div className="flex gap-2 mt-2"><span className="text-xs py-2">Price to DM you:</span><input type="number" value={hostDmPrice} onChange={e=>setHostDmPrice(parseInt(e.target.value)||0)} className="flex-1 bg-[#150826] border border-[#3A1B63] rounded-xl p-2 text-sm" /><span className="py-2">🪙</span></div>}<button onClick={saveDmSettings} className="w-full mt-2 bg-[#FFD700] text-black py-2.5 rounded-full font-black text-xs">Save DM Settings</button></div>
           <p className="text-xs font-black mt-4 text-[#FFD700]">Chats ({dmThreads.length})</p>
-          {dmThreads.length===0 && <div className="text-center mt-8"><p className="text-4xl">💬</p><p className="font-black mt-2">No DMs yet</p><p className="text-white/40 text-xs mt-1">Go to a profile > Message to start DM.<br/>If host set PAID, you pay once to unlock chat.</p><button onClick={()=>setTab("discover")} className="mt-3 bg-[#FFD700] text-black px-6 py-2.5 rounded-full text-xs font-black">Find Someone to DM</button></div>}
+          {dmThreads.length===0 && <div className="text-center mt-8"><p className="text-4xl">💬</p><p className="font-black mt-2">No DMs yet</p><p className="text-white/40 text-xs mt-1">Go to a profile &gt; Message to start DM.<br/>If host set PAID, you pay once to unlock chat.</p><button onClick={()=>setTab("discover")} className="mt-3 bg-[#FFD700] text-black px-6 py-2.5 rounded-full text-xs font-black">Find Someone to DM</button></div>}
           {dmThreads.map(t=>(
             <div key={t.id} onClick={()=>openDMWith(t.other)} className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-3 mt-2 flex items-center gap-3 cursor-pointer">
               <div className="w-11 h-11 rounded-full bg-gradient-to-br from-[#FFD700] to-orange-500 text-black flex items-center justify-center font-black">{t.other[0]?.toUpperCase()}</div>
@@ -645,21 +656,21 @@ export default function LoomiLive() {
         const userCats = ["All", ...Array.from(new Set(userPosts.flatMap(p => { const tags = p.caption.match(/#\w+/g) || []; return tags.map(t => t.replace("#","").toLowerCase()); })))];
         const filtered = profileCategory==="All" ? userPosts : userPosts.filter(p => p.caption.toLowerCase().includes("#"+profileCategory.toLowerCase()));
         const totalLikes = userPosts.reduce((s,p)=>s+(p.likes||0),0);
-        const isPrivate = localStorage.getItem("loomi_private_"+profileUser)==="1";
+        const isPrivate = isProfilePrivate(profileUser);
         const canView = isMe || !isPrivate || following.includes(profileUser);
         return (<div className="absolute inset-0 z-[105] bg-[#150826] overflow-y-auto pb-[80px]"><div className="flex justify-between items-center p-3"><button onClick={()=>{ setViewingProfile(null); setProfileCategory("All"); }} className="text-xl">←</button><p className="font-black">@{profileUser}</p><span className="text-xl">⋯</span></div><div className="flex items-center gap-4 px-4"><div className="w-[80px] h-[80px] rounded-full bg-gradient-to-br from-[#FFD700] to-orange-500 flex items-center justify-center text-black font-black text-3xl shrink-0">{profileUser[0]?.toUpperCase()}</div><div className="flex-1 flex justify-around text-center"><div><p className="font-black">{following.length}</p><p className="text-[11px] text-white/50">Following</p></div><div><p className="font-black">{userPosts.length}</p><p className="text-[11px] text-white/50">Posts</p></div><div><p className="font-black">{totalLikes}</p><p className="text-[11px] text-white/50">Likes</p></div></div></div><div className="px-4 mt-2"><p className="font-black text-sm">@{profileUser} {isPrivate && <span className="text-[10px] bg-[#241040] border border-[#3A1B63] px-1.5 py-0.5 rounded-full">🔒 Private</span>}</p><p className="text-xs text-white/60">{isMe ? "This is you" : `Check out @${profileUser}'s content 🔥`}</p></div><div className="flex gap-2 px-4 mt-3">{isMe ? (<><button onClick={()=>{ setViewingProfile(null); setShowPlusMenu(true); }} className="flex-1 bg-[#FFD700] text-black py-2.5 rounded-full text-xs font-black">+ Create Post</button><button onClick={()=>{ setViewingProfile(null); setTab("balance"); }} className="flex-1 bg-[#241040] border border-[#3A1B63] py-2.5 rounded-full text-xs font-bold">Wallet</button></>) : (<><button onClick={()=>toggleFollow(profileUser)} className={`flex-1 py-2.5 rounded-full text-xs font-black ${following.includes(profileUser)?"bg-[#241040] border border-[#3A1B63]":"bg-[#FFD700] text-black"}`}>{following.includes(profileUser)?"Following ✓":"Follow"}</button><button onClick={()=>openDMWith(profileUser)} className="flex-1 bg-[#FFD700] text-black py-2.5 rounded-full text-xs font-black">💬 Message</button></>)}</div>{!canView ? (<div className="text-center px-6 mt-10"><p className="text-4xl">🔒</p><p className="font-black mt-2">This account is private</p><button onClick={()=>toggleFollow(profileUser)} className="mt-3 bg-[#FFD700] text-black px-6 py-2.5 rounded-full text-xs font-black">Follow to View</button></div>) : (<><div className="flex gap-2 px-4 mt-4 overflow-x-auto pb-2">{userCats.slice(0,8).map(c=>(<button key={c} onClick={()=>setProfileCategory(c)} className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold capitalize ${profileCategory===c?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{c}</button>))}</div>{filtered.length===0 ? (<p className="text-center text-white/40 text-xs mt-10 px-6">No posts yet</p>) : (<div className="grid grid-cols-3 gap-[2px] px-[2px]">{filtered.map(p=>(<div key={p.id} onClick={()=>{ setViewingProfile(null); setTab("feed"); setSearchQuery(p.creator); }} className="relative aspect-[3/4] bg-[#241040] overflow-hidden cursor-pointer">{p.mediaUrl ? (p.mediaType==="video" || p.mediaUrl.startsWith("data:video") ? <video src={p.mediaUrl} className="w-full h-full object-cover" /> : <img src={p.mediaUrl} className="w-full h-full object-cover" />) : <p className="p-2 text-[11px]">{p.caption}</p>}{p.isLocked && <span className="absolute top-1 right-1 bg-[#FFD700] text-black text-[9px] px-1 rounded-full font-black">🔒</span>}<span className="absolute bottom-1 left-1 text-[10px] bg-black/60 px-1 rounded">❤️ {p.likes||0}</span></div>))}</div>)}</>)}</div>);
       })()}
 
       {showPlusMenu && (<div className="absolute inset-0 z-[110] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowPlusMenu(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 space-y-3"><h2 className="font-black text-center">Create ✨ - Loomi-live</h2><button onClick={()=>{ setShowPlusMenu(false); goLive(); }} className="w-full bg-red-600 py-4 rounded-2xl font-black">🔴 Go LIVE - Loomi-live</button><button onClick={()=>{ setShowPlusMenu(false); setCreateStep(0); setShowCreatePost(true); }} className="w-full bg-[#FFD700] text-black py-4 rounded-2xl font-black">📹 Create Content</button><button onClick={()=>setShowPlusMenu(false)} className="w-full text-white/60 text-xs py-1">Cancel</button></div></div>)}
       {showPrivacy && (<div className="absolute inset-0 z-[115] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowPrivacy(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 space-y-3 max-h-[85vh] overflow-y-auto"><h2 className="font-black text-center">🛡️ Privacy & DM - Loomi-live 18+</h2><div className="bg-[#FFD700]/10 border border-[#FFD700] rounded-xl p-3"><p className="font-black text-sm">💬 YOUR DM SETTINGS - YOU CHOOSE</p><div className="flex gap-2 mt-2 flex-wrap">{(["paid","free","followers","off"] as const).map(m=><button key={m} onClick={()=>setHostDmMode(m)} className={`px-3 py-2 rounded-full text-xs font-bold capitalize ${hostDmMode===m?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{m==="paid"?"💰 Paid Only":m==="free"?"🆓 Anyone Free":m==="followers"?"👥 Followers Only":"🚫 OFF"}</button>)}</div>{hostDmMode==="paid" && <div className="flex gap-2 mt-2"><span className="text-xs py-2">Price:</span><input type="number" value={hostDmPrice} onChange={e=>setHostDmPrice(parseInt(e.target.value)||0)} className="flex-1 bg-[#241040] border border-[#3A1B63] rounded-xl p-2 text-sm" /><span className="py-2">🪙</span></div>}<button onClick={saveDmSettings} className="w-full mt-2 bg-[#FFD700] text-black py-2.5 rounded-full font-black text-xs">Save DM Settings</button></div><label className="flex justify-between items-center bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm">😶‍🌫️ Face Blur <input type="checkbox" checked={privacySettings.faceBlur} onChange={e=>setPrivacySettings(p=>({...p, faceBlur: e.target.checked}))} className="w-5 h-5 accent-[#FFD700]" /></label><label className="flex justify-between items-center bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm">🔒 Private Profile <span className="text-[11px] text-white/50">OPTIONAL</span><input type="checkbox" checked={privacySettings.privateProfile} onChange={e=>setPrivacySettings(p=>({...p, privateProfile: e.target.checked}))} className="w-5 h-5 accent-[#FFD700]" /></label><label className="flex justify-between items-center bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm">🚫 Block Downloads <span className="text-[11px] text-white/50">OPTIONAL</span><input type="checkbox" checked={privacySettings.blockDownloads} onChange={e=>setPrivacySettings(p=>({...p, blockDownloads: e.target.checked}))} className="w-5 h-5 accent-[#FFD700]" /></label><label className="flex justify-between items-center bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm">📍 Hide Location <span className="text-[11px] text-white/50">OPTIONAL</span><input type="checkbox" checked={privacySettings.hideLocation} onChange={e=>setPrivacySettings(p=>({...p, hideLocation: e.target.checked}))} className="w-5 h-5 accent-[#FFD700]" /></label><button onClick={()=>{ setShowPrivacy(false); setShowRules(true); }} className="w-full bg-[#241040] border border-[#3A1B63] py-3 rounded-full font-bold text-xs">📜 View Rules & T's & C's</button><button onClick={savePrivacy} className="w-full bg-[#FFD700] text-black py-3 rounded-full font-black">Save Privacy</button><button onClick={()=>setShowPrivacy(false)} className="w-full text-white/60 text-xs">Close</button></div></div>)}
-      {showRules && (<div className="absolute inset-0 z-[120] flex items-center justify-center p-4 bg-black/80"><div className="bg-[#1E0B36] border border-[#FFD700] rounded-3xl p-5 w-full max-h-[85vh] overflow-y-auto"><h2 className="font-black text-center">📜 LOOMI-LIVE - RULES & T's & C's - 18+ 🔞</h2><div className="text-xs space-y-3 mt-3"><p><b>1. 18+ ONLY:</b> You must be 18 years or older. No minors allowed. Under-18 accounts will be deleted immediately. By using Loomi-live you confirm you are 18+.</p><p><b>2. CONSENT IS EVERYTHING:</b> All interaction must be consensual. No means no. No harassment, no pressure, no begging. Harassment = ban.</p><p><b>3. NO RECORDING / NO LEAKING:</b> No screenshots, screen recording, or sharing Private, DM, or Locked content outside Loomi-live. Your @username watermark is on every screen to trace leaks. Leak = permanent ban.</p><p><b>4. NO REAL PERSONAL INFO:</b> Don't share phone number, home address, ID number, bank details in chat / DM / LIVE. Use in-app coins only. Loomi-live is not responsible if you share info yourself.</p><p><b>5. NO ILLEGAL CONTENT:</b> No minors, no non-consensual content, no violence, no hate speech, no illegal activity. Zero tolerance.</p><p><b>6. HOST RULES:</b> Each host sets their own DM mode (Paid / Free / Followers / OFF), DM price, VIP price, and house rules. Respect the host's settings.</p><p><b>7. COINS & PAYMENTS:</b> Coins are used for tips, unlocks, DM, VIP. Coins are non-refundable except if host does not deliver a paid Private. Cashout min 50 coins, paid weekly to Capitec / FNB / Standard etc. 1 coin = R 0.27.</p><p><b>8. REPORT & BLOCK:</b> You can Block / Report any user in 1 tap. Reports are reviewed. False reports = warning.</p><p><b>9. PRIVACY:</b> Watermark is compulsory. Face Blur, Private Profile, Block Downloads, Hide Location are optional - you choose.</p><p><b>10. LIABILITY:</b> Loomi-live provides the platform. Users are responsible for their own content and behaviour. Loomi-live may remove content or ban accounts that break these rules without refund.</p><p><b>11. CHANGES:</b> Rules may change. Continued use means you accept new rules.</p></div><label className="flex gap-2 items-center text-xs mt-4"><input type="checkbox" checked={termsAccepted} onChange={e=>{ setTermsAccepted(e.target.checked); if(e.target.checked){ localStorage.setItem("loomi_terms","yes"); } }} className="w-4 h-4 accent-[#FFD700]" /> I have read and accept Rules & T's & C's</label><button onClick={()=>{ localStorage.setItem("loomi_terms","yes"); setTermsAccepted(true); setShowTerms(false); setShowRules(false); }} className="w-full mt-3 bg-[#FFD700] text-black py-3 rounded-full font-black">Accept & Continue</button><button onClick={()=>setShowRules(false)} className="w-full text-white/60 text-xs mt-2">Close</button></div></div>)}
+      {showRules && (<div className="absolute inset-0 z-[120] flex items-center justify-center p-4 bg-black/80"><div className="bg-[#1E0B36] border border-[#FFD700] rounded-3xl p-5 w-full max-h-[85vh] overflow-y-auto"><h2 className="font-black text-center">📜 LOOMI-LIVE - RULES & T's & C's - 18+ 🔞</h2><div className="text-xs space-y-3 mt-3"><p><b>1. 18+ ONLY:</b> You must be 18 years or older. No minors allowed. Under-18 accounts will be deleted immediately. By using Loomi-live you confirm you are 18+.</p><p><b>2. CONSENT IS EVERYTHING:</b> All interaction must be consensual. No means no. No harassment, no pressure, no begging. Harassment = ban.</p><p><b>3. NO RECORDING / NO LEAKING:</b> No screenshots, screen recording, or sharing Private, DM, or Locked content outside Loomi-live. Your @username watermark is on every screen to trace leaks. Leak = permanent ban.</p><p><b>4. NO REAL PERSONAL INFO:</b> Don't share phone number, home address, ID number, bank details in chat / DM / LIVE. Use in-app coins only. Loomi-live is not responsible if you share info yourself.</p><p><b>5. NO ILLEGAL CONTENT:</b> No minors, no non-consensual content, no violence, no hate speech, no illegal activity. Zero tolerance.</p><p><b>6. HOST RULES:</b> Each host sets their own DM mode (Paid / Free / Followers / OFF), DM price, VIP price, and house rules. Respect the host's settings.</p><p><b>7. COINS & PAYMENTS:</b> Coins are used for tips, unlocks, DM, VIP. Coins are non-refundable except if host does not deliver a paid Private. Cashout min 50 coins, paid weekly to Capitec / FNB / Standard etc. 1 coin = R 0.27.</p><p><b>8. REPORT & BLOCK:</b> You can Block / Report any user in 1 tap. Reports are reviewed. False reports = warning.</p><p><b>9. PRIVACY:</b> Watermark is compulsory. Face Blur, Private Profile, Block Downloads, Hide Location are optional - you choose.</p><p><b>10. LIABILITY:</b> Loomi-live provides the platform. Users are responsible for their own content and behaviour. Loomi-live may remove content or ban accounts that break these rules without refund.</p><p><b>11. CHANGES:</b> Rules may change. Continued use means you accept new rules.</p></div><label className="flex gap-2 items-center text-xs mt-4"><input type="checkbox" checked={termsAccepted} onChange={e=>{ setTermsAccepted(e.target.checked); if(e.target.checked){ try{ localStorage.setItem("loomi_terms","yes"); }catch{} } }} className="w-4 h-4 accent-[#FFD700]" /> I have read and accept Rules & T's & C's</label><button onClick={()=>{ try{ localStorage.setItem("loomi_terms","yes"); }catch{} setTermsAccepted(true); setShowTerms(false); setShowRules(false); }} className="w-full mt-3 bg-[#FFD700] text-black py-3 rounded-full font-black">Accept & Continue</button><button onClick={()=>setShowRules(false)} className="w-full text-white/60 text-xs mt-2">Close</button></div></div>)}
       {showTerms && termsAccepted===false && (<div className="absolute inset-0 z-[118] flex items-center justify-center p-4 bg-black/80"><div className="bg-[#1E0B36] border border-[#FFD700] rounded-3xl p-5 w-full text-center"><h2 className="font-black">Welcome to Loomi-live 18+ 🔞</h2><p className="text-sm text-white/60 mt-2">Please read Rules & T's & C's before you continue</p><button onClick={()=>setShowRules(true)} className="w-full mt-4 bg-[#FFD700] text-black py-3 rounded-full font-black">Read Rules & T's & C's</button></div></div>)}
       {showVipModal && (<div className="absolute inset-0 z-[90] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowVipModal(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 space-y-3"><h2 className="font-black text-center">👑 Request Private with @{watching}</h2><div className="flex gap-2">{[50,100,200].map(v=><button key={v} onClick={()=>setVipPrice(v)} className={`flex-1 py-3 rounded-xl text-xs font-black ${vipPrice===v?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{v} 🪙</button>)}</div><button onClick={requestPrivate} className="w-full bg-[#FFD700] text-black py-3 rounded-full font-black">Send Request - {vipPrice} 🪙</button><button onClick={()=>setShowVipModal(false)} className="w-full text-white/60 text-xs">Cancel</button></div></div>)}
       {vipIncoming && (<div className="absolute inset-0 z-[95] flex items-center justify-center p-6"><div className="bg-[#1E0B36] border border-[#FFD700] rounded-2xl p-5 w-full text-center"><h2 className="font-black">👑 Private Request</h2><p className="text-sm mt-2">@{vipIncoming.viewer} wants Private for <b className="text-[#FFD700]">{vipIncoming.price} 🪙</b></p><div className="flex gap-2 mt-4"><button onClick={declineVip} className="flex-1 bg-[#241040] border border-[#3A1B63] py-3 rounded-full font-black text-xs">Decline</button><button onClick={acceptVip} className="flex-1 bg-[#FFD700] text-black py-3 rounded-full font-black text-xs">Accept</button></div></div></div>)}
       {showCreatePost && (<div className="absolute inset-0 z-[90] bg-black flex flex-col"><div className="flex justify-between items-center p-3"><button onClick={()=>setShowCreatePost(false)} className="text-xl">✕</button><p className="font-black text-sm">{createStep===0 ? "Upload" : "Post"}</p><span className="text-xs text-white/50">{createStep===0 ? "1/2" : "2/2"}</span></div>{createStep===0 && (<div className="flex-1 flex flex-col p-3"><div className="flex-1 bg-[#1E0B36] rounded-2xl overflow-hidden flex items-center justify-center">{postMedia ? (postMedia.startsWith("data:video") || postType==="video" ? <video src={postMedia} controls className="w-full h-full object-cover" /> : <img src={postMedia} className="w-full h-full object-cover" />) : <p className="text-white/40 text-sm text-center px-6">No file yet<br/>Tap below to pick from gallery</p>}</div><input ref={fileInputRef} type="file" accept="image/*,video/*" onChange={handleFileUpload} className="hidden" /><button onClick={()=>fileInputRef.current?.click()} className="w-full mt-3 bg-[#FFD700] text-black py-4 rounded-2xl font-black">{uploading ? "⏳ Uploading..." : postMedia ? "✅ Picked - Change File" : "📁 UPLOAD - Pick Pic / Video from Gallery"}</button>{postMedia && <button onClick={()=>setPostMedia("")} className="w-full mt-2 bg-red-600 py-2 rounded-full text-xs font-black">✕ Remove File</button>}<button onClick={()=>setCreateStep(1)} disabled={!postMedia} className="w-full mt-2 bg-white text-black py-3.5 rounded-full font-black disabled:opacity-40">Next →</button></div>)}{createStep===1 && (<div className="flex-1 bg-[#1E0B36] overflow-y-auto p-4 space-y-3"><div className="rounded-xl overflow-hidden border border-[#3A1B63]">{postMedia.startsWith("data:video") ? <video src={postMedia} controls className="w-full max-h-[220px] bg-black" /> : <img src={postMedia} className="w-full max-h-[220px] object-cover" />}</div><textarea value={postCaption} onChange={e=>setPostCaption(e.target.value)} placeholder="Add description... e.g. Best bunny chow #food / My new GTI #cars" className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm" rows={3} /><div className="flex gap-2 flex-wrap">{["#food","#cars","#funny","#meme","#viral","#fyp","#amapiano","#southafrica"].map(t=>(<button key={t} onClick={()=>setPostCaption(p=>p.includes(t)?p:(p+" "+t).trim())} className="bg-[#241040] border border-[#FFD700]/40 rounded-full px-3 py-1 text-xs">{t} +</button>))}</div><div className="flex gap-2"><button onClick={()=>setPostType("post")} className={`flex-1 py-2.5 rounded-xl text-xs font-black ${postType!=="video"&&postType!=="meme"?"bg-white text-black":"bg-[#241040] border border-[#3A1B63]"}`}>📝 Post</button><button onClick={()=>setPostType("video")} className={`flex-1 py-2.5 rounded-xl text-xs font-black ${postType==="video"?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>📹 Video</button><button onClick={()=>setPostType("meme")} className={`flex-1 py-2.5 rounded-xl text-xs font-black ${postType==="meme"?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>😂 Meme</button></div><div className="bg-[#241040] border border-[#3A1B63] rounded-xl p-3 space-y-2"><p className="text-xs font-black">⏳ Disappearing - OPTIONAL</p><label className="flex justify-between text-xs">View-Once <input type="checkbox" checked={postViewOnce} onChange={e=>setPostViewOnce(e.target.checked)} className="w-4 h-4 accent-[#FFD700]" /></label><div className="flex gap-2">{["Forever","24h","7 days"].map(v=><button key={v} onClick={()=>setPostExpiry(v)} className={`flex-1 py-2 rounded-full text-xs font-bold ${postExpiry===v?"bg-[#FFD700] text-black":"bg-[#150826] border border-[#3A1B63]"}`}>{v}</button>)}</div></div><div className="flex gap-2"><button onClick={()=>setPostLocked(false)} className={`flex-1 py-3 rounded-xl text-xs font-black ${!postLocked?"bg-white text-black":"bg-[#241040] border border-[#3A1B63]"}`}>FREE</button><button onClick={()=>setPostLocked(true)} className={`flex-1 py-3 rounded-xl text-xs font-black ${postLocked?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>🔒 LOCKED - Earn 🪙</button></div>{postLocked && <div className="flex items-center gap-2"><span className="text-xs">Price:</span><input type="number" value={postPrice} onChange={e=>setPostPrice(parseInt(e.target.value)||0)} className="flex-1 bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm" /><span>🪙</span></div>}<div className="flex gap-2"><button onClick={()=>setCreateStep(0)} className="flex-1 bg-[#241040] border border-[#3A1B63] py-3 rounded-full text-xs">← Back</button><button onClick={async()=>{ await createPost(); setShowCreatePost(false); }} className="flex-1 bg-[#FFD700] text-black py-3 rounded-full font-black">Post 🔥</button></div></div>)}</div>)}
-      {showCashout && (<div className="absolute inset-0 z-[90] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowCashout(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 space-y-3"><h2 className="font-black text-center">💸 Cash Out - Loomi-live</h2><div className="flex gap-2">{[50,100,200,500].map(v=><button key={v} onClick={()=>setCashoutAmount(v)} className={`flex-1 py-2.5 rounded-xl text-xs font-black ${cashoutAmount===v?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{v} 🪙</button>)}</div><input value={bankName} onChange={e=>setBankName(e.target.value)} placeholder="Bank - Capitec / FNB / Standard" className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm outline-none" /><input value={accountNum} onChange={e=>setAccountNum(e.target.value)} placeholder="Account Number" className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm```tsx
-          /><input value={accountName} onChange={e=>setAccountName(e.target.value)} placeholder="Account Name" className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm outline-none" /><button onClick={requestCashout} className="w-full bg-[#FFD700] text-black py-3 rounded-full font-black">Request {cashoutAmount} 🪙 Cashout</button><button onClick={()=>setShowCashout(false)} className="w-full text-white/60 text-xs">Cancel</button></div></div>)}
-      {showRecharge && (<div className="absolute inset-0 z-50 flex flex-col justify-end"><div className="flex-1 bg-black/60" onClick={()=>setShowRecharge(false)}></div><div className="bg-white text-black rounded-t-[24px] p-4"><h2 className="text-center font-black">Recharge - Loomi-live</h2><div className="grid grid-cols-3 gap-2 mt-4">{[{c:5,r:"R 1,35"},{c:30,r:"R 8,09"},{c:40,r:"R 10,79"},{c:50,r:"R 13,45"},{c:70,r:"R 18,85"},{c:139,r:"R 37,39"}].map(p=><div key={p.c} onClick={()=>{ setKeys(k=>k+p.c); localStorage.setItem("loomi_keys",(keys+p.c).toString()); }} className="border rounded-xl p-3 text-center cursor-pointer"><p className="font-black">🪙 {p.c}</p><p className="text-xs">{p.r}</p></div>)}</div><button onClick={()=>setShowRecharge(false)} className="w-full mt-4 bg-black text-white py-3 rounded-full font-black">Close</button></div></div>)}
+      {showCashout && (<div className="absolute inset-0 z-[90] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowCashout(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 space-y-3"><h2 className="font-black text-center">💸 Cash Out - Loomi-live</h2><div className="flex gap-2">{[50,100,200,500].map(v=><button key={v} onClick={()=>setCashoutAmount(v)} className={`flex-1 py-2.5 rounded-xl text-xs font-black ${cashoutAmount===v?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{v} 🪙</button>)}</div><input value={bankName} onChange={e=>setBankName(e.target.value)} placeholder="Bank - Capitec / FNB / Standard" className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm outline-none" /><input value={accountNum} onChange={e=>setAccountNum(e.target.value)} placeholder="Account Number" className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm outline-none" /><input value={accountName} onChange={e=>setAccountName(e.target.value)} placeholder="Account Name" className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm outline-none" /><button onClick={requestCashout} className="w-full bg-[#FFD700] text-black py-3 rounded-full font-black">Request {cashoutAmount} 🪙 Cashout</button><button onClick={()=>setShowCashout(false)} className="w-full text-white/60 text-xs">Cancel</button></div></div>)}
+      {showRecharge && (<div className="absolute inset-0 z-50 flex```tsx
+      {showRecharge && (<div className="absolute inset-0 z-50 flex flex-col justify-end"><div className="flex-1 bg-black/60" onClick={()=>setShowRecharge(false)}></div><div className="bg-white text-black rounded-t-[24px] p-4"><h2 className="text-center font-black">Recharge - Loomi-live</h2><div className="grid grid-cols-3 gap-2 mt-4">{[{c:5,r:"R 1,35"},{c:30,r:"R 8,09"},{c:40,r:"R 10,79"},{c:50,r:"R 13,45"},{c:70,r:"R 18,85"},{c:139,r:"R 37,39"}].map(p=><div key={p.c} onClick={()=>{ setKeys(k=>k+p.c); try{ localStorage.setItem("loomi_keys",(keys+p.c).toString()); }catch{} }} className="border rounded-xl p-3 text-center cursor-pointer"><p className="font-black">🪙 {p.c}</p><p className="text-xs">{p.r}</p></div>)}</div><button onClick={()=>setShowRecharge(false)} className="w-full mt-4 bg-black text-white py-3 rounded-full font-black">Close</button></div></div>)}
       {showDashboard && (
         <div className="absolute inset-0 z-[100] flex"><div className="flex-1 bg-black/60" onClick={()=>setShowDashboard(false)}></div><div className="w-[78%] max-w-[320px] bg-[#150826] border-l border-[#3A1B63] h-full overflow-y-auto p-3 space-y-3">
           <div className="flex justify-between items-center p-1"><button onClick={()=>{ setShowDashboard(false); setViewingProfile(nickname); }} className="font-black text-white">@{nickname} → Profile</button><button onClick={()=>setShowDashboard(false)} className="text-white text-xl">✕</button></div>
@@ -677,9 +688,8 @@ export default function LoomiLive() {
       )}
       {showSafety && (<div className="absolute inset-0 z-[95] flex items-center justify-center p-6"><div className="bg-[#1E0B36] border border-red-500 rounded-2xl p-5 w-full"><h2 className="font-black text-center">🛡️ Safety - @{showSafety}</h2><p className="text-xs text-white/60 text-center mt-1">What happened?</p><div className="flex flex-col gap-2 mt-3">{["Rude / Harassment","Sexual / Nude","Spam / Scam","Hate Speech","Screenshot / Leak"].map(r=>(<button key={r} onClick={()=>setReportReason(r)} className={`py-2.5 rounded-xl text-xs font-bold ${reportReason===r?"bg-red-600 text-white":"bg-[#241040] border border-[#3A1B63]"}`}>{r}</button>))}</div><div className="flex gap-2 mt-4"><button onClick={()=>blockUser(showSafety)} className="flex-1 bg-[#241040] border border-[#3A1B63] py-3 rounded-full font-black text-xs">🚫 Block</button><button onClick={()=>reportUser(showSafety)} className="flex-1 bg-red-600 py-3 rounded-full font-black text-xs">🚨 Report</button></div><button onClick={()=>setShowSafety(null)} className="w-full text-white/60 text-xs mt-3">Cancel</button></div></div>)}
       {showNotifs && (<div className="absolute inset-0 z-[96] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowNotifs(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 max-h-[60vh] overflow-y-auto"><div className="flex justify-between items-center"><h2 className="font-black">🔔 Notifications</h2><button onClick={()=>{ setNotifications([]); setShowNotifs(false); }} className="text-xs text-[#FFD700] underline">Clear all</button></div>{notifications.length===0 ? <p className="text-white/50 text-xs mt-4 text-center">No notifications yet.</p> : notifications.map(n=>(<div key={n.id} onClick={()=>{ setShowNotifs(false); if(n.user && liveHosts.some((h:any)=>h.nickname===n.user)) watchHost(n.user); }} className="bg-[#241040] border border-[#3A1B63] rounded-xl p-3 mt-2 flex justify-between items-center cursor-pointer"><p className="text-sm">{n.text}</p><span className="text-[#FFD700] text-xs font-black">Watch ›</span></div>))}<button onClick={()=>setShowNotifs(false)} className="w-full mt-4 text-white/60 text-xs">Close</button></div></div>)}
-      {showWelcome && (<div className="absolute inset-0 z-[110] flex items-center justify-center p-6 bg-black/80"><div className="bg-[#1E0B36] border border-[#FFD700] rounded-3xl p-6 w-full text-center"><p className="text-[11px] tracking-[0.3em] text-[#FFD700] font-black">WELCOME TO</p><h2 className="text-2xl font-black mt-1">LOOMI-LIVE 18+ ✨</h2><p className="text-sm text-white/70 mt-2">Go LIVE, DM, get gifts, unlock FEED, earn real money. Screenshots are watermarked & protected.</p><div className="text-left text-xs space-y-2 mt-4 bg-[#241040] border border-[#3A1B63] rounded-xl p-3"><p>🔴 <b>Go LIVE</b> - Loomi-live</p><p>💬 <b>DM</b> - Host chooses Paid / Free / Followers / OFF</p><p>🎁 <b>Send Gifts</b> - support hosts</p><p>👑 <b>VIP Private</b> - 1-to-1 for coins</p><p>🔒 <b>FEED Unlocks</b> - earn from posts</p><p>💸 <b>Cash Out</b> - Capitec / FNB</p><p>🛡️ <b>Privacy</b> - Face Blur, Private Profile, View-Once</p></div><button onClick={()=>{ localStorage.setItem("loomi_seen_welcome","1"); setShowWelcome(false); }} className="w-full mt-4 bg-[#FFD700] text-black py-3 rounded-full font-black">Start Exploring 🚀</button></div></div>)}
+      {showWelcome && (<div className="absolute inset-0 z-[110] flex items-center justify-center p-6 bg-black/80"><div className="bg-[#1E0B36] border border-[#FFD700] rounded-3xl p-6 w-full text-center"><p className="text-[11px] tracking-[0.3em] text-[#FFD700] font-black">WELCOME TO</p><h2 className="text-2xl font-black mt-1">LOOMI-LIVE 18+ ✨</h2><p className="text-sm text-white/70 mt-2">Go LIVE, DM, get gifts, unlock FEED, earn real money. Screenshots are watermarked & protected.</p><div className="text-left text-xs space-y-2 mt-4 bg-[#241040] border border-[#3A1B63] rounded-xl p-3"><p>🔴 <b>Go LIVE</b> - Loomi-live</p><p>💬 <b>DM</b> - Host chooses Paid / Free / Followers / OFF</p><p>🎁 <b>Send Gifts</b> - support hosts</p><p>👑 <b>VIP Private</b> - 1-to-1 for coins</p><p>🔒 <b>FEED Unlocks</b> - earn from posts</p><p>💸 <b>Cash Out</b> - Capitec / FNB</p><p>🛡️ <b>Privacy</b> - Face Blur, Private Profile, View-Once</p></div><button onClick={()=>{ try{ localStorage.setItem("loomi_seen_welcome","1"); }catch{} setShowWelcome(false); }} className="w-full mt-4 bg-[#FFD700] text-black py-3 rounded-full font-black">Start Exploring 🚀</button></div></div>)}
       {!dailyClaimed && !showWelcome && nickname && (<button onClick={claimDaily} className="absolute top-[118px] left-1/2 -translate-x-1/2 z-[80] bg-[#FFD700] text-black px-4 py-2 rounded-full text-xs font-black shadow-lg animate-bounce whitespace-nowrap">🎁 Claim Daily +10 🪙</button>)}
-      {/* 7 COMPULSORY WATERMARK - ALWAYS ON */}
       <div className="pointer-events-none fixed inset-0 z-[200] opacity-[0.07] overflow-hidden select-none">
         <div className="absolute inset-0 flex flex-wrap content-around justify-around" style={{ transform: "rotate(-20deg) scale(1.5)" }}>
           {Array.from({length: 12}).map((_,i)=>(<span key={i} className="text-[14px] font-black whitespace-nowrap mx-6 my-6">LOOMI-LIVE • @{nickname} • PRIVATE • DO NOT SCREENSHOT</span>))}
