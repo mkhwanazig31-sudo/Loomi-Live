@@ -49,6 +49,7 @@ export default function LoomiLive() {
   const [floaters, setFloaters] = useState<Floater[]>([]);
   const [showFloaters, setShowFloaters] = useState(true);
   const [chatError, setChatError] = useState("");
+  const [camError, setCamError] = useState("");
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
@@ -67,6 +68,14 @@ export default function LoomiLive() {
     const savedKeys = localStorage.getItem("loomi_keys");
     if(savedKeys) setKeys(parseInt(savedKeys));
   }, []);
+  // CAM FIX: re-attach stream when isLive changes
+  useEffect(() => {
+    if(isLive && streamRef.current && videoRef.current){
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.muted = true;
+      videoRef.current.play().catch(()=>{});
+    }
+  }, [isLive]);
   useEffect(() => {
     const unsubHosts = onSnapshot(collection(db, "live_rooms"), s => {
       const all = s.docs.map(d => d.data() as any);
@@ -117,21 +126,16 @@ export default function LoomiLive() {
     if (watching) return watching;
     return null;
   }, [isLive, watching, nickname]);
-
   useEffect(() => {
     setChat([]); setFloaters([]); seenChatRef.current.clear();
   }, [currentRoom]);
-
-  // CHAT - FIXED: NO orderBy + NO composite index needed, sort in JS, show error if blocked
   useEffect(() => {
     if (!currentRoom) { setChat([]); setFloaters([]); return; }
-    // Simple query only - no orderBy, so no index needed
     const q = query(collection(db, "live_chat"), where("room", "==", currentRoom), limit(100));
     const unsub = onSnapshot(q, s => {
       setChatError("");
-      // sort locally by createdAt - works even if timestamp is null
       const msgs = s.docs.map(d => ({ id: d.id, ...d.data() } as any)).sort((a,b)=>{
-        const ta = a.createdAt?.seconds || 0; const tb = b.createdAt?.seconds || 0;
+        const ta = a.createdAt?.seconds || a.ts || 0; const tb = b.createdAt?.seconds || b.ts || 0;
         return ta - tb;
       });
       setChat(msgs);
@@ -152,7 +156,6 @@ export default function LoomiLive() {
     });
     return () => unsub();
   }, [currentRoom]);
-
   useEffect(()=>{ chatEndRef.current?.scrollIntoView({behavior:"smooth"}) },[chat]);
   const addFloater = (user: string, msg: string) => {
     const colors = ["#FFD700","#fff","#FF6B9D","#7CFFB2","#7CC7FF"];
@@ -169,21 +172,52 @@ export default function LoomiLive() {
     for(let i=0;i<count;i++){ setTimeout(()=>{ const id = Math.random().toString(36).slice(2)+i; const x = Math.random()*70+10; setGifts(g=>[...g, { id, emoji, x, type }]); setTimeout(()=> setGifts(g=>g.filter(f=>f.id!==id)), 3000); }, i*100); }
   };
   const saveNickname = () => { const clean = tempNick.trim().toLowerCase().replace(/[^a-z0-9_]/g,""); if(clean.length<3) return alert("Min 3"); localStorage.setItem("loomi_nickname", clean); nicknameRef.current = clean; setNickname(clean); };
+  // CAM FIXED goLive
   const goLive = async () => {
     try {
+      setCamError("");
+      // Kill old black stream first
+      if(streamRef.current){ streamRef.current.getTracks().forEach(t=>t.stop()); streamRef.current = null; }
+      if(videoRef.current) videoRef.current.srcObject = null;
       pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear();
       setChat([]); setFloaters([]); seenChatRef.current.clear();
+
       const stream = await navigator.mediaDevices.getUserMedia({video:{width:640, height:480, facingMode:"user"}, audio:true});
-      streamRef.current = stream; if(videoRef.current){ videoRef.current.srcObject = stream; await videoRef.current.play().catch(()=>{}); }
+      console.log("CAM TRACKS:", stream.getTracks().map(t=>t.kind + " enabled:" + t.enabled + " state:" + t.readyState));
+      stream.getTracks().forEach(t=>{ t.enabled = true; });
+      streamRef.current = stream;
+
+      // Set video BEFORE setIsLive so it never stays hidden
+      if(videoRef.current){
+        videoRef.current.srcObject = stream;
+        videoRef.current.muted = true;
+        videoRef.current.playsInline = true;
+        try{ await videoRef.current.play(); }catch(e){ console.log("play error", e); }
+      }
       setIsLive(true); setWatching(null); setTab("live");
+      // Re-attach after render - fixes black on some phones
+      setTimeout(()=>{
+        if(videoRef.current && streamRef.current){
+          videoRef.current.srcObject = streamRef.current;
+          videoRef.current.play().catch(()=>{});
+        }
+      }, 300);
+
       await setDoc(doc(db, "live_rooms", nicknameRef.current), { nickname: nicknameRef.current, isLive:true, createdAt: serverTimestamp() });
       onSnapshot(collection(db, `live_rooms/${nicknameRef.current}/viewers`), async snap => {
         for(const change of snap.docChanges()){ if(change.type==="added"){ const viewerId = change.doc.id; const data = change.doc.data() as any; if(!data.offer || pcsRef.current.has(viewerId)) continue; const pc = new RTCPeerConnection(ICE); pcsRef.current.set(viewerId, pc); stream.getTracks().forEach(t=> pc.addTrack(t, stream)); pc.onicecandidate = e => { if(e.candidate) addDoc(collection(db, `live_rooms/${nicknameRef.current}/viewers/${viewerId}/candidates_host`), { candidate: e.candidate.toJSON() }); }; onSnapshot(collection(db, `live_rooms/${nicknameRef.current}/viewers/${viewerId}/candidates_viewer`), s => { s.docChanges().forEach(async ch=>{ if(ch.type==="added"){ try{ await pc.addIceCandidate(new RTCIceCandidate(ch.doc.data().candidate)); }catch{} } }); }); await pc.setRemoteDescription(new RTCSessionDescription(data.offer)); const answer = await pc.createAnswer(); await pc.setLocalDescription(answer); await updateDoc(doc(db, `live_rooms/${nicknameRef.current}/viewers/${viewerId}`), { answer: { sdp: answer.sdp, type: answer.type } }); } }
       });
-    } catch(e:any){ alert("Allow cam/mic"); }
+    } catch(e:any){
+      console.log("CAM ERROR", e);
+      if(e.name==="NotAllowedError") setCamError("Camera blocked - tap lock icon in browser > Allow Camera > Refresh");
+      else if(e.name==="NotFoundError") setCamError("No camera found on this device");
+      else if(e.name==="NotReadableError") setCamError("Camera busy - close WhatsApp / Instagram camera, then retry");
+      else setCamError("Camera error: " + e.message);
+      alert("Allow cam/mic - " + e.message);
+    }
   };
   const stopLive = async () => {
-    streamRef.current?.getTracks().forEach(t=>t.stop()); pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear(); setIsLive(false); if(videoRef.current) videoRef.current.srcObject=null;
+    streamRef.current?.getTracks().forEach(t=>t.stop()); streamRef.current = null; pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear(); setIsLive(false); if(videoRef.current) videoRef.current.srcObject=null;
     try{ const viewersSnap = await getDocs(collection(db, `live_rooms/${nicknameRef.current}/viewers`)); for (const d of viewersSnap.docs) await deleteDoc(d.ref); const chatSnap = await getDocs(query(collection(db, "live_chat"), where("room", "==", nicknameRef.current))); for (const d of chatSnap.docs) await deleteDoc(d.ref); await deleteDoc(doc(db, "live_rooms", nicknameRef.current)); }catch{} setChat([]); setFloaters([]); seenChatRef.current.clear(); setVipActive(false); setVipWith(null);
   };
   const watchHost = async (hostNick: string) => {
@@ -197,8 +231,6 @@ export default function LoomiLive() {
     onSnapshot(doc(db, `live_rooms/${hostNick}/viewers/${nicknameRef.current}`), async snap => { const data=snap.data() as any; if(data?.answer && pc.signalingState==="have-local-offer"){ await pc.setRemoteDescription(new RTCSessionDescription(data.answer)); } });
   };
   const stopWatching = async () => { pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear(); if(remoteRef.current) remoteRef.current.srcObject=null; remoteStreamRef.current = new MediaStream(); const w=watching; setWatching(null); try{ if(w) await deleteDoc(doc(db, `live_rooms/${w}/viewers/${nicknameRef.current}`)); }catch{} setChat([]); setFloaters([]); seenChatRef.current.clear(); setVipActive(false); setVipWith(null); };
-
-  // SEND CHAT - LOCAL FIRST: shows instantly, then saves to Firebase
   const sendChat = async () => {
     const t = input.trim();
     if(!t) return;
@@ -206,11 +238,9 @@ export default function LoomiLive() {
     if(!room) return alert("Go LIVE or watch someone first to comment");
     const myUser = nicknameRef.current || nickname;
     setInput("");
-    // 1. Show instantly locally - no waiting for Firebase
     const localMsg = { id: "local-"+Date.now(), room, user: myUser, msg: t, createdAt: { seconds: Date.now()/1000 } };
     setChat(prev => [...prev, localMsg]);
     addFloater(myUser, t);
-    // 2. Try save to Firebase for other viewers
     try {
       await addDoc(collection(db,"live_chat"), { room, user: myUser, msg: t, createdAt: serverTimestamp(), ts: Date.now() });
     } catch(e:any) {
@@ -302,11 +332,12 @@ export default function LoomiLive() {
         </div>
       )}
       {vipStatus && <div className="bg-[#241040] border-b border-[#3A1B63] px-3 py-1.5 text-[11px] text-[#FFD700] text-center">{vipStatus}</div>}
+      {camError && <div className="bg-red-600 px-3 py-2 text-[11px] text-center font-bold">{camError} • <button onClick={()=>{ setCamError(""); goLive(); }} className="underline">Tap to Retry</button></div>}
 
       <div className={`relative bg-[#1E0B36] w-full overflow-hidden ${tab==="live" ? "flex-1 flex flex-col pb-[70px]" : "hidden"}`}>
-        <div className="relative flex-1 aspect-[9/14] overflow-hidden">
-          <video ref={videoRef} autoPlay muted playsInline className={`w-full h-full object-cover ${isLive ? "block" : "hidden"}`} />
-          <video ref={remoteRef} autoPlay playsInline className={`w-full h-full object-cover bg-black ${watching ? "block" : "hidden"}`} />
+        <div className="relative flex-1 aspect-[9/14] overflow-hidden bg-black">
+          <video ref={videoRef} autoPlay muted playsInline onClick={()=>{ if(videoRef.current) videoRef.current.play().catch(()=>{}); }} className={`w-full h-full object-cover ${isLive ? "block" : "hidden"}`} style={{ transform: "scaleX(-1)" }} />
+          <video ref={remoteRef} autoPlay playsInline onClick={()=>{ if(remoteRef.current) remoteRef.current.play().catch(()=>{}); }} className={`w-full h-full object-cover bg-black ${watching ? "block" : "hidden"}`} />
           {showFloaters && (isLive || watching) && (
             <div className="absolute inset-0 pointer-events-none overflow-hidden z-[15]">
               {floaters.map(f=>(
@@ -337,6 +368,7 @@ export default function LoomiLive() {
               <p className="text-[11px] tracking-[0.25em] text-[#FFD700] font-black mb-2">LOOMI-LIVE</p>
               <button onClick={goLive} className="bg-[#FFD700] text-black px-10 py-4 rounded-full font-black text-lg shadow-[0_0_30px_rgba(255,215,0,0.4)]">🔴 GO LIVE</button>
               <p className="mt-3 text-white/50 text-xs">{liveHosts.length} live now</p>
+              {camError && <p className="mt-2 text-red-400 text-[11px] px-6 text-center">{camError}</p>}
             </div>
           )}
         </div>
