@@ -7,6 +7,7 @@ import { collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp,
 const ICE = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }, { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" }, { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" }, { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" }] };
 type Fly = { id: string; emoji: string; x: number; type: string };
 type Post = { id: string; creator: string; caption: string; mediaUrl: string; isLocked: boolean; price: number; likes: number; unlockedBy?: string[]; createdAt?: any };
+type Floater = { id: string; user: string; msg: string; top: number; duration: number; color: string };
 
 export default function LoomiLive() {
   const [nickname, setNickname] = useState("");
@@ -35,7 +36,6 @@ export default function LoomiLive() {
   const [vipSeconds, setVipSeconds] = useState(0);
   const [vipIncoming, setVipIncoming] = useState<any | null>(null);
   const [vipStatus, setVipStatus] = useState("");
-  // WALLET + CASHOUT - Feature 3
   const [showCashout, setShowCashout] = useState(false);
   const [cashoutAmount, setCashoutAmount] = useState(100);
   const [bankName, setBankName] = useState("Capitec");
@@ -46,6 +46,9 @@ export default function LoomiLive() {
   const [tipEarnings, setTipEarnings] = useState(0);
   const [vipEarnings, setVipEarnings] = useState(0);
   const [giftEarnings, setGiftEarnings] = useState(0);
+  // FLOATING COMMENTS - DETOUR
+  const [floaters, setFloaters] = useState<Floater[]>([]);
+  const [showFloaters, setShowFloaters] = useState(true);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
@@ -54,6 +57,7 @@ export default function LoomiLive() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const nicknameRef = useRef<string>("");
   const remoteStreamRef = useRef<MediaStream | null>(null);
+  const seenChatRef = useRef<Set<string>>(new Set());
 
   useEffect(() => { nicknameRef.current = nickname; }, [nickname]);
   useEffect(() => {
@@ -75,7 +79,6 @@ export default function LoomiLive() {
     const unsub = onSnapshot(q, s => setPosts(s.docs.map(d => ({ id: d.id, ...d.data() } as Post))));
     return () => unsub();
   }, []);
-  // WALLET LISTENERS - earnings + cashouts
   useEffect(() => {
     if(!nickname) return;
     const q1 = query(collection(db, "loomi_unlocks"), where("creator", "==", nickname));
@@ -114,8 +117,12 @@ export default function LoomiLive() {
     if (watching) return watching;
     return null;
   }, [isLive, watching]);
+  // RESET FLOATERS + CHAT WHEN ROOM CHANGES / ENDS - STREAM ONLY
   useEffect(() => {
-    if (!currentRoom) { setChat([]); return; }
+    setChat([]); setFloaters([]); seenChatRef.current.clear();
+  }, [currentRoom]);
+  useEffect(() => {
+    if (!currentRoom) { setChat([]); setFloaters([]); return; }
     const q = query(collection(db, "live_chat"), where("room", "==", currentRoom), orderBy("createdAt", "asc"), limit(100));
     const unsub = onSnapshot(q, s => {
       const msgs = s.docs.map(d => d.data());
@@ -123,13 +130,28 @@ export default function LoomiLive() {
       s.docChanges().forEach(change => {
         if(change.type==="added"){
           const data = change.doc.data() as any;
+          const key = change.doc.id;
           if(data.gift && data.user !== nicknameRef.current){ triggerGift(data.gift); }
+          // FLOATING COMMENT - only if not gift spam, only for this stream
+          if(!seenChatRef.current.has(key) && !data.gift){
+            seenChatRef.current.add(key);
+            addFloater(data.user, data.msg);
+          }
         }
       });
     });
     return () => unsub();
   }, [currentRoom]);
   useEffect(()=>{ chatEndRef.current?.scrollIntoView({behavior:"smooth"}) },[chat]);
+  const addFloater = (user: string, msg: string) => {
+    const colors = ["#FFD700","#fff","#FF6B9D","#7CFFB2","#7CC7FF"];
+    const id = Math.random().toString(36).slice(2);
+    const top = 12 + Math.random()*45; // 12% - 57% over video
+    const duration = 5 + Math.random()*3;
+    const color = colors[Math.floor(Math.random()*colors.length)];
+    setFloaters(f=>[...f.slice(-8), { id, user, msg, top, duration, color }]);
+    setTimeout(()=> setFloaters(f=>f.filter(x=>x.id!==id)), (duration+0.5)*1000);
+  };
   const triggerGift = (emoji: string) => {
     let type = "heart"; if(emoji==="🚀") type="rocket"; if(emoji==="👑") type="crown"; if(emoji==="💎") type="diamond"; if(emoji==="🔥") type="fire"; if(emoji==="🌹") type="heart";
     const count = type==="heart" ? 6 : 1;
@@ -139,6 +161,7 @@ export default function LoomiLive() {
   const goLive = async () => {
     try {
       pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear();
+      setChat([]); setFloaters([]); seenChatRef.current.clear();
       const stream = await navigator.mediaDevices.getUserMedia({video:{width:640, height:480, facingMode:"user"}, audio:true});
       streamRef.current = stream; if(videoRef.current){ videoRef.current.srcObject = stream; await videoRef.current.play().catch(()=>{}); }
       setIsLive(true); setWatching(null); setTab("live");
@@ -150,10 +173,10 @@ export default function LoomiLive() {
   };
   const stopLive = async () => {
     streamRef.current?.getTracks().forEach(t=>t.stop()); pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear(); setIsLive(false); if(videoRef.current) videoRef.current.srcObject=null;
-    try{ const viewersSnap = await getDocs(collection(db, `live_rooms/${nicknameRef.current}/viewers`)); for (const d of viewersSnap.docs) await deleteDoc(d.ref); const chatSnap = await getDocs(query(collection(db, "live_chat"), where("room", "==", nicknameRef.current))); for (const d of chatSnap.docs) await deleteDoc(d.ref); await deleteDoc(doc(db, "live_rooms", nicknameRef.current)); }catch{} setChat([]); setVipActive(false); setVipWith(null);
+    try{ const viewersSnap = await getDocs(collection(db, `live_rooms/${nicknameRef.current}/viewers`)); for (const d of viewersSnap.docs) await deleteDoc(d.ref); const chatSnap = await getDocs(query(collection(db, "live_chat"), where("room", "==", nicknameRef.current))); for (const d of chatSnap.docs) await deleteDoc(d.ref); await deleteDoc(doc(db, "live_rooms", nicknameRef.current)); }catch{} setChat([]); setFloaters([]); seenChatRef.current.clear(); setVipActive(false); setVipWith(null);
   };
   const watchHost = async (hostNick: string) => {
-    if(isLive) await stopLive(); pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear(); remoteStreamRef.current = new MediaStream(); setWatching(hostNick); setTab("live");
+    if(isLive) await stopLive(); pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear(); remoteStreamRef.current = new MediaStream(); setWatching(hostNick); setTab("live"); setChat([]); setFloaters([]); seenChatRef.current.clear();
     const pc = new RTCPeerConnection(ICE); pcsRef.current.set(hostNick, pc); if(remoteRef.current) remoteRef.current.srcObject = remoteStreamRef.current;
     pc.ontrack = (e) => { remoteStreamRef.current?.addTrack(e.track); if(remoteRef.current && remoteStreamRef.current){ remoteRef.current.srcObject = remoteStreamRef.current; remoteRef.current.play().catch(()=>{ if(remoteRef.current){ remoteRef.current.muted=true; remoteRef.current.play(); } }); } };
     pc.onicecandidate = e => { if(e.candidate) addDoc(collection(db, `live_rooms/${hostNick}/viewers/${nicknameRef.current}/candidates_viewer`), { candidate: e.candidate.toJSON() }); };
@@ -162,7 +185,7 @@ export default function LoomiLive() {
     await setDoc(doc(db, `live_rooms/${hostNick}/viewers/${nicknameRef.current}`), { viewer: nicknameRef.current, offer: { sdp: offer.sdp, type: offer.type }, createdAt: serverTimestamp() });
     onSnapshot(doc(db, `live_rooms/${hostNick}/viewers/${nicknameRef.current}`), async snap => { const data=snap.data() as any; if(data?.answer && pc.signalingState==="have-local-offer"){ await pc.setRemoteDescription(new RTCSessionDescription(data.answer)); } });
   };
-  const stopWatching = async () => { pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear(); if(remoteRef.current) remoteRef.current.srcObject=null; remoteStreamRef.current = new MediaStream(); const w=watching; setWatching(null); try{ if(w) await deleteDoc(doc(db, `live_rooms/${w}/viewers/${nicknameRef.current}`)); }catch{} setChat([]); setVipActive(false); setVipWith(null); };
+  const stopWatching = async () => { pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear(); if(remoteRef.current) remoteRef.current.srcObject=null; remoteStreamRef.current = new MediaStream(); const w=watching; setWatching(null); try{ if(w) await deleteDoc(doc(db, `live_rooms/${w}/viewers/${nicknameRef.current}`)); }catch{} setChat([]); setFloaters([]); seenChatRef.current.clear(); setVipActive(false); setVipWith(null); };
   const sendChat = async () => { if(!input.trim() || !currentRoom) return; const t=input.trim(); setInput(""); await addDoc(collection(db,"live_chat"), { room: currentRoom, user:nicknameRef.current, msg:t, createdAt: serverTimestamp() }); };
   const sendGift = async (cost:number, emoji:string) => { if(!currentRoom) return alert("Go live or watch first"); if(keys < cost) { setShowRecharge(true); return; } if(cost>0){ const newKeys = keys - cost; setKeys(newKeys); localStorage.setItem("loomi_keys", newKeys.toString()); } triggerGift(emoji); await addDoc(collection(db,"live_chat"), { room: currentRoom, user:nicknameRef.current, msg:`sent ${emoji}`, gift:emoji, cost, createdAt: serverTimestamp() }); };
   const createPost = async () => {
@@ -201,7 +224,6 @@ export default function LoomiLive() {
     const q = query(collection(db, "loomi_private"), where("host", "==", nicknameRef.current), where("status", "==", "accepted"));
     const snap = await getDocs(q); for(const d of snap.docs) await updateDoc(d.ref, { status: "ended" });
   };
-  // CASHOUT
   const totalEarnings = unlockEarnings + tipEarnings + vipEarnings + giftEarnings;
   const requestCashout = async () => {
     if(cashoutAmount < 50) return alert("Min 50 coins to cashout");
@@ -236,7 +258,10 @@ export default function LoomiLive() {
 
       <div className="flex justify-between items-center px-4 py-2 bg-[#150826] text-xs">
         <span className="font-black">@{nickname} <span className="text-[#FFD700] text-[10px]">• LIVE</span></span>
-        <button onClick={()=>{ localStorage.clear(); location.reload(); }} className="bg-[#241040] border border-[#3A1B63] px-3 py-1 rounded-full text-white/70">Logout</button>
+        <div className="flex gap-2">
+          <button onClick={()=>setShowFloaters(v=>!v)} className={`px-2 py-1 rounded-full text-[10px] font-bold ${showFloaters?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{showFloaters?"💬 Fly: ON":"💬 Fly: OFF"}</button>
+          <button onClick={()=>{ localStorage.clear(); location.reload(); }} className="bg-[#241040] border border-[#3A1B63] px-3 py-1 rounded-full text-white/70">Logout</button>
+        </div>
       </div>
 
       {vipActive && (
@@ -251,6 +276,16 @@ export default function LoomiLive() {
         <div className="relative flex-1 aspect-[9/14] overflow-hidden">
           <video ref={videoRef} autoPlay muted playsInline className={`w-full h-full object-cover ${isLive ? "block" : "hidden"}`} />
           <video ref={remoteRef} autoPlay playsInline className={`w-full h-full object-cover bg-black ${watching ? "block" : "hidden"}`} />
+          {/* FLOATING COMMENTS - fly across video, stream-only */}
+          {showFloaters && (isLive || watching) && (
+            <div className="absolute inset-0 pointer-events-none overflow-hidden z-[15]">
+              {floaters.map(f=>(
+                <div key={f.id} className="absolute whitespace-nowrap animate-flyComment" style={{ top: `${f.top}%`, animationDuration: `${f.duration}s`, color: f.color }}>
+                  <span className="bg-black/60 backdrop-blur px-2.5 py-1 rounded-full text-[12px] font-bold shadow-lg">@{f.user}: <span className="text-white">{f.msg}</span></span>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">
             {gifts.map(g=>(<div key={g.id} className="absolute bottom-20 text-3xl animate-heart" style={{ left: `${g.x}%` }}>{g.emoji}</div>))}
           </div>
@@ -366,7 +401,6 @@ export default function LoomiLive() {
         </div>
       )}
 
-      {/* WALLET + CASHOUT - NEW */}
       {tab==="balance" && (
         <div className="flex-1 bg-[#150826] text-white p-3 space-y-3 overflow-y-auto pb-[80px]">
           <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl text-center py-6">
@@ -424,7 +458,6 @@ export default function LoomiLive() {
         </div></div>
       )}
 
-      {/* CASHOUT MODAL */}
       {showCashout && (
         <div className="absolute inset-0 z-[90] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowCashout(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 space-y-3">
           <h2 className="font-black text-center">💸 Cash Out - Loomi-Live</h2>
@@ -476,6 +509,8 @@ export default function LoomiLive() {
       <style>{`
         @keyframes heartFloat{0%{transform:translateY(0) scale(0.3);opacity:0}15%{opacity:1}100%{transform:translateY(-80vh);opacity:0}}
         .animate-heart{animation:heartFloat 3s ease-out forwards}
+        @keyframes flyComment{0%{transform:translateX(100vw);opacity:0}10%{opacity:1}90%{opacity:1}100%{transform:translateX(-100%);opacity:0}}
+        .animate-flyComment{animation:flyComment linear forwards}
       `}</style>
     </div>
   );
