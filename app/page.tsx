@@ -57,10 +57,12 @@ export default function LoomiLive() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifs, setShowNotifs] = useState(false);
   const [notifiedLive, setNotifiedLive] = useState<Set<string>>(new Set());
-  // SEARCH + CATEGORIES - NEW
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [userCategory, setUserCategory] = useState(()=> { try{ return localStorage.getItem("loomi_category") || "Chat"; }catch{ return "Chat"; } });
+  // LAUNCH POLISH - NEW
+  const [dailyClaimed, setDailyClaimed] = useState(()=> { try{ return localStorage.getItem("loomi_daily") === new Date().toDateString(); }catch{ return false; } });
+  const [showWelcome, setShowWelcome] = useState(()=> { try{ return !localStorage.getItem("loomi_seen_welcome"); }catch{ return false; } });
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
@@ -279,6 +281,23 @@ export default function LoomiLive() {
       setNotifications(prev=>[{ id: Date.now().toString(), text: `You followed @${user} ✅`, user, time: Date.now() }, ...prev].slice(0,20));
     }
   };
+  // LAUNCH POLISH FUNCTIONS
+  const claimDaily = () => {
+    if(dailyClaimed) return;
+    const newKeys = keys + 10;
+    setKeys(newKeys);
+    localStorage.setItem("loomi_keys", newKeys.toString());
+    localStorage.setItem("loomi_daily", new Date().toDateString());
+    setDailyClaimed(true);
+    alert("🎉 Daily Bonus +10 🪙 claimed! Come back tomorrow.");
+  };
+  const shareApp = async () => {
+    const text = `Join me on LOOMI-LIVE 🔴✨ - Live, Chat, Earn! My username is @${nickname} - ${window.location.origin}`;
+    try{
+      if(navigator.share){ await navigator.share({ title: "LOOMI-LIVE", text, url: window.location.origin }); }
+      else { await navigator.clipboard.writeText(text); alert("Link copied! Share it on WhatsApp / TikTok"); }
+    }catch{ try{ await navigator.clipboard.writeText(text); alert("Link copied!"); }catch{} }
+  };
   const sendChat = async () => {
     const t = input.trim();
     if(!t) return;
@@ -342,7 +361,6 @@ export default function LoomiLive() {
   };
   const rankings = useMemo(()=>{ const map:Record<string,number>={}; chat.forEach((c:any)=>{ if(c.gift) map[c.user]=(map[c.user]||0)+(c.cost||1); }); return Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([user,pts],i)=>({user,pts,rank:i+1})); },[chat]);
   const fmtTime = (s:number) => `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
-  // SEARCH + CATEGORIES LOGIC
   const categories = ["All","Girls","Boys","Music","Chat","Gaming","Dancing"];
   const getCategoryFor = (name: string) => {
     const cats = ["Girls","Boys","Music","Chat","Gaming","Dancing"];
@@ -565,6 +583,10 @@ export default function LoomiLive() {
 
       {tab==="balance" && (
         <div className="flex-1 bg-[#150826] text-white p-3 space-y-3 overflow-y-auto pb-[80px]">
+          <div className="bg-gradient-to-r from-[#FFD700] to-orange-500 text-black rounded-2xl p-4 flex justify-between items-center">
+            <div><p className="text-lg font-black">@{nickname}</p><p className="text-[11px] font-bold opacity-70">{userCategory} Creator • {following.length} Following</p></div>
+            <button onClick={shareApp} className="bg-black text-white px-3 py-2 rounded-full text-xs font-black">↗ Share</button>
+          </div>
           <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl text-center py-6">
             <p className="text-xs text-white/60">Coins Balance</p>
             <p className="text-4xl font-black text-[#FFD700]">{keys} 🪙</p>
@@ -574,6 +596,8 @@ export default function LoomiLive() {
               <button onClick={()=>setShowCashout(true)} className="bg-white text-black px-4 py-2 rounded-full text-xs font-black">Cash Out 💸</button>
             </div>
           </div>
+          {!dailyClaimed && <button onClick={claimDaily} className="w-full bg-[#FFD700] text-black py-3 rounded-2xl font-black text-sm animate-pulse">🎁 Claim Daily Bonus +10 🪙</button>}
+          {dailyClaimed && <p className="text-center text-xs text-white/50">✅ Daily bonus claimed - come back tomorrow for +10 🪙</p>}
           <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-4">
             <p className="text-sm font-black">Earnings Breakdown</p>
             <div className="mt-3 space-y-2 text-sm">
@@ -689,6 +713,25 @@ export default function LoomiLive() {
           {following.length>0 && <div className="mt-4"><p className="text-xs font-black text-white/60">Following ({following.length})</p>{following.map(u=><div key={u} className="flex justify-between py-2 text-sm"><span>@{u}</span><button onClick={()=>toggleFollow(u)} className="text-red-400 text-xs">Unfollow</button></div>)}</div>}
           <button onClick={()=>setShowNotifs(false)} className="w-full mt-4 text-white/60 text-xs">Close</button>
         </div></div>
+      )}
+
+      {showWelcome && (
+        <div className="absolute inset-0 z-[110] flex items-center justify-center p-6 bg-black/80"><div className="bg-[#1E0B36] border border-[#FFD700] rounded-3xl p-6 w-full text-center">
+          <p className="text-[11px] tracking-[0.3em] text-[#FFD700] font-black">WELCOME TO</p>
+          <h2 className="text-2xl font-black mt-1">LOOMI-LIVE ✨</h2>
+          <p className="text-sm text-white/70 mt-2">Go LIVE, get gifts, unlock FEED, earn real money.</p>
+          <div className="text-left text-xs space-y-2 mt-4 bg-[#241040] border border-[#3A1B63] rounded-xl p-3">
+            <p>🔴 <b>Go LIVE</b> - show yourself</p>
+            <p>🎁 <b>Send Gifts</b> - support hosts</p>
+            <p>👑 <b>VIP Private</b> - 1-to-1 for coins</p>
+            <p>🔒 <b>FEED Unlocks</b> - earn from posts</p>
+            <p>💸 <b>Cash Out</b> - Capitec / FNB</p>
+          </div>
+          <button onClick={()=>{ localStorage.setItem("loomi_seen_welcome","1"); setShowWelcome(false); }} className="w-full mt-4 bg-[#FFD700] text-black py-3 rounded-full font-black">Start Exploring 🚀</button>
+        </div></div>
+      )}
+      {!dailyClaimed && !showWelcome && nickname && (
+        <button onClick={claimDaily} className="absolute top-[118px] left-1/2 -translate-x-1/2 z-[80] bg-[#FFD700] text-black px-4 py-2 rounded-full text-xs font-black shadow-lg animate-bounce whitespace-nowrap">🎁 Claim Daily +10 🪙</button>
       )}
 
       <div className="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto bg-[#150826] border-t border-[#3A1B63] flex justify-around items-center py-2.5 z-[60]">
