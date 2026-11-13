@@ -22,13 +22,20 @@ export default function LoomiLive() {
   const [rankingTab, setRankingTab] = useState<"viewers"|"guardian">("viewers");
   const [showRecharge, setShowRecharge] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
-  // FEED STATE - Feature 1
   const [posts, setPosts] = useState<Post[]>([]);
   const [showCreatePost, setShowCreatePost] = useState(false);
   const [postCaption, setPostCaption] = useState("");
   const [postMedia, setPostMedia] = useState("");
   const [postLocked, setPostLocked] = useState(false);
   const [postPrice, setPostPrice] = useState(20);
+  // VIP PRIVATE - Feature 2
+  const [showVipModal, setShowVipModal] = useState(false);
+  const [vipPrice, setVipPrice] = useState(100);
+  const [vipActive, setVipActive] = useState(false);
+  const [vipWith, setVipWith] = useState<string | null>(null);
+  const [vipSeconds, setVipSeconds] = useState(0);
+  const [vipIncoming, setVipIncoming] = useState<any | null>(null);
+  const [vipStatus, setVipStatus] = useState("");
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
@@ -53,12 +60,34 @@ export default function LoomiLive() {
     });
     return () => unsubHosts();
   }, [nickname]);
-  // FEED LISTENER
   useEffect(() => {
     const q = query(collection(db, "loomi_posts"), orderBy("createdAt", "desc"), limit(50));
     const unsub = onSnapshot(q, s => setPosts(s.docs.map(d => ({ id: d.id, ...d.data() } as Post))));
     return () => unsub();
   }, []);
+  // VIP LISTENER - incoming requests for host + status for viewer
+  useEffect(() => {
+    if(!nickname) return;
+    const q = query(collection(db, "loomi_private"), where("host", "==", nickname));
+    const unsub = onSnapshot(q, s => {
+      s.docChanges().forEach(ch => {
+        const d = { id: ch.doc.id, ...ch.doc.data() } as any;
+        if(ch.type==="added" && d.status==="pending") setVipIncoming(d);
+        if(ch.type==="modified" && d.status==="accepted" && d.viewer===nickname){
+          setVipActive(true); setVipWith(d.host); setVipSeconds(300); setVipStatus("Private accepted!");
+        }
+        if(ch.type==="modified" && d.status==="declined" && d.viewer===nickname) setVipStatus("Host declined private");
+        if(ch.type==="modified" && d.status==="ended") { setVipActive(false); setVipWith(null); setVipSeconds(0); }
+      });
+    });
+    return () => unsub();
+  }, [nickname]);
+  // VIP TIMER
+  useEffect(() => {
+    if(!vipActive) return;
+    const t = setInterval(()=>{ setVipSeconds(s=>{ if(s<=1){ endVip(); return 0; } return s-1; }); },1000);
+    return ()=>clearInterval(t);
+  }, [vipActive]);
   const currentRoom = useMemo(() => {
     if (isLive) return nicknameRef.current;
     if (watching) return watching;
@@ -100,7 +129,7 @@ export default function LoomiLive() {
   };
   const stopLive = async () => {
     streamRef.current?.getTracks().forEach(t=>t.stop()); pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear(); setIsLive(false); if(videoRef.current) videoRef.current.srcObject=null;
-    try{ const viewersSnap = await getDocs(collection(db, `live_rooms/${nicknameRef.current}/viewers`)); for (const d of viewersSnap.docs) await deleteDoc(d.ref); const chatSnap = await getDocs(query(collection(db, "live_chat"), where("room", "==", nicknameRef.current))); for (const d of chatSnap.docs) await deleteDoc(d.ref); await deleteDoc(doc(db, "live_rooms", nicknameRef.current)); }catch{} setChat([]);
+    try{ const viewersSnap = await getDocs(collection(db, `live_rooms/${nicknameRef.current}/viewers`)); for (const d of viewersSnap.docs) await deleteDoc(d.ref); const chatSnap = await getDocs(query(collection(db, "live_chat"), where("room", "==", nicknameRef.current))); for (const d of chatSnap.docs) await deleteDoc(d.ref); await deleteDoc(doc(db, "live_rooms", nicknameRef.current)); }catch{} setChat([]); setVipActive(false); setVipWith(null);
   };
   const watchHost = async (hostNick: string) => {
     if(isLive) await stopLive(); pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear(); remoteStreamRef.current = new MediaStream(); setWatching(hostNick); setTab("live");
@@ -112,10 +141,9 @@ export default function LoomiLive() {
     await setDoc(doc(db, `live_rooms/${hostNick}/viewers/${nicknameRef.current}`), { viewer: nicknameRef.current, offer: { sdp: offer.sdp, type: offer.type }, createdAt: serverTimestamp() });
     onSnapshot(doc(db, `live_rooms/${hostNick}/viewers/${nicknameRef.current}`), async snap => { const data=snap.data() as any; if(data?.answer && pc.signalingState==="have-local-offer"){ await pc.setRemoteDescription(new RTCSessionDescription(data.answer)); } });
   };
-  const stopWatching = async () => { pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear(); if(remoteRef.current) remoteRef.current.srcObject=null; remoteStreamRef.current = new MediaStream(); const w=watching; setWatching(null); try{ if(w) await deleteDoc(doc(db, `live_rooms/${w}/viewers/${nicknameRef.current}`)); }catch{} setChat([]); };
+  const stopWatching = async () => { pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear(); if(remoteRef.current) remoteRef.current.srcObject=null; remoteStreamRef.current = new MediaStream(); const w=watching; setWatching(null); try{ if(w) await deleteDoc(doc(db, `live_rooms/${w}/viewers/${nicknameRef.current}`)); }catch{} setChat([]); setVipActive(false); setVipWith(null); };
   const sendChat = async () => { if(!input.trim() || !currentRoom) return; const t=input.trim(); setInput(""); await addDoc(collection(db,"live_chat"), { room: currentRoom, user:nicknameRef.current, msg:t, createdAt: serverTimestamp() }); };
   const sendGift = async (cost:number, emoji:string) => { if(!currentRoom) return alert("Go live or watch first"); if(keys < cost) { setShowRecharge(true); return; } if(cost>0){ const newKeys = keys - cost; setKeys(newKeys); localStorage.setItem("loomi_keys", newKeys.toString()); } triggerGift(emoji); await addDoc(collection(db,"live_chat"), { room: currentRoom, user:nicknameRef.current, msg:`sent ${emoji}`, gift:emoji, cost, createdAt: serverTimestamp() }); };
-  // FEED ACTIONS
   const createPost = async () => {
     if(!postCaption.trim() && !postMedia.trim()) return alert("Add caption or media");
     await addDoc(collection(db, "loomi_posts"), { creator: nicknameRef.current, caption: postCaption.trim(), mediaUrl: postMedia.trim(), isLocked: postLocked, price: postLocked ? postPrice : 0, likes: 0, unlockedBy: [], createdAt: serverTimestamp() });
@@ -130,7 +158,33 @@ export default function LoomiLive() {
   };
   const likePost = async (p: Post) => { await updateDoc(doc(db, "loomi_posts", p.id), { likes: (p.likes||0)+1 }); };
   const tipPost = async (p: Post) => { await sendGift(5, "💎"); await addDoc(collection(db, "loomi_tips"), { sender: nicknameRef.current, creator: p.creator, postId: p.id, amount: 5, createdAt: serverTimestamp() }); };
+  // VIP ACTIONS
+  const requestPrivate = async () => {
+    if(!watching) return alert("Watch someone first");
+    if(keys < vipPrice){ setShowRecharge(true); return; }
+    const newKeys = keys - vipPrice; setKeys(newKeys); localStorage.setItem("loomi_keys", newKeys.toString());
+    await addDoc(collection(db, "loomi_private"), { host: watching, viewer: nicknameRef.current, price: vipPrice, status: "pending", createdAt: serverTimestamp() });
+    setShowVipModal(false); setVipStatus("Request sent - waiting for host...");
+  };
+  const acceptVip = async () => {
+    if(!vipIncoming) return;
+    await updateDoc(doc(db, "loomi_private", vipIncoming.id), { status: "accepted" });
+    setVipActive(true); setVipWith(vipIncoming.viewer); setVipSeconds(300); setVipIncoming(null);
+  };
+  const declineVip = async () => {
+    if(!vipIncoming) return;
+    // refund viewer logic is in UI - host declines, viewer keeps status
+    await updateDoc(doc(db, "loomi_private", vipIncoming.id), { status: "declined" });
+    setVipIncoming(null);
+  };
+  const endVip = async () => {
+    setVipActive(false); setVipWith(null); setVipSeconds(0);
+    // mark any active private as ended
+    const q = query(collection(db, "loomi_private"), where("host", "==", nicknameRef.current), where("status", "==", "accepted"));
+    const snap = await getDocs(q); for(const d of snap.docs) await updateDoc(d.ref, { status: "ended" });
+  };
   const rankings = useMemo(()=>{ const map:Record<string,number>={}; chat.forEach((c:any)=>{ if(c.gift) map[c.user]=(map[c.user]||0)+(c.cost||1); }); return Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([user,pts],i)=>({user,pts,rank:i+1})); },[chat]);
+  const fmtTime = (s:number) => `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
 
   if(!nickname) return (
     <div className="min-h-screen bg-[#150826] text-white flex items-center justify-center max-w-[430px] mx-auto p-6">
@@ -139,7 +193,7 @@ export default function LoomiLive() {
   );
 
   return (
-    <div className="min-h-screen bg-[#150826] text-white flex flex-col max-w-[430px] mx-auto relative overflow-hidden">
+    <div className={`min-h-screen bg-[#150826] text-white flex flex-col max-w-[430px] mx-auto relative overflow-hidden ${vipActive?"ring-4 ring-[#FFD700]":""}`}>
       <div className="flex justify-between items-center px-4 pt-3 pb-1 bg-[#150826]">
         <div><p className="text-[11px] tracking-[0.3em] text-[#FFD700] font-black leading-none">MANSION</p><h1 className="text-[22px] font-black leading-none mt-0.5">LOOMI-LIVE</h1></div>
         <div className="flex items-center gap-2"><span className="bg-[#241040] border border-[#3A1B63] px-3 py-1.5 rounded-full text-xs font-bold">🪙 {keys}</span><button onClick={()=>setShowDashboard(true)} className="w-8 h-8 bg-[#241040] border border-[#3A1B63] rounded-full text-sm">☰</button></div>
@@ -159,7 +213,15 @@ export default function LoomiLive() {
         <button onClick={()=>{ localStorage.clear(); location.reload(); }} className="bg-[#241040] border border-[#3A1B63] px-3 py-1 rounded-full text-white/70">Logout</button>
       </div>
 
-      {/* LIVE TAB - UNCHANGED CAMERA LOGIC */}
+      {/* VIP BANNER */}
+      {vipActive && (
+        <div className="bg-[#FFD700] text-black px-3 py-2 flex justify-between items-center text-xs font-black z-30">
+          <span>👑 PRIVATE with @{vipWith} • {fmtTime(vipSeconds)}</span>
+          <button onClick={endVip} className="bg-black text-white px-3 py-1 rounded-full text-[11px]">End Private</button>
+        </div>
+      )}
+      {vipStatus && <div className="bg-[#241040] border-b border-[#3A1B63] px-3 py-1.5 text-[11px] text-[#FFD700] text-center">{vipStatus}</div>}
+
       <div className={`relative bg-[#1E0B36] w-full overflow-hidden ${tab==="live" ? "flex-1 flex flex-col pb-[70px]" : "hidden"}`}>
         <div className="relative flex-1 aspect-[9/14] overflow-hidden">
           <video ref={videoRef} autoPlay muted playsInline className={`w-full h-full object-cover ${isLive ? "block" : "hidden"}`} />
@@ -174,7 +236,11 @@ export default function LoomiLive() {
                 <div className="flex gap-1"><div className="bg-black/60 backdrop-blur px-2.5 py-1 rounded-full text-xs">{liveHosts.length+1} viewers</div><button onClick={()=> isLive ? stopLive() : stopWatching()} className="bg-black/60 w-6 h-6 rounded-full flex items-center justify-center">✕</button></div>
               </div>
               <div className="absolute top-10 left-2 bg-black/60 px-2.5 py-1 rounded-full text-[10px] z-20">Daily Ranking</div>
-              <div className="absolute top-10 right-2 bg-[#FFD700] text-black px-2.5 py-1 rounded-full text-[10px] font-black z-20">Gallery 3/10</div>
+              <div className="absolute top-10 right-2 bg-[#FFD700] text-black px-2.5 py-1 rounded-full text-[10px] font-black z-20">{vipActive ? `👑 PRIVATE ${fmtTime(vipSeconds)}` : "Gallery 3/10"}</div>
+              {/* VIP REQUEST BUTTON - only for viewer */}
+              {watching && !vipActive && (
+                <button onClick={()=>setShowVipModal(true)} className="absolute bottom-3 right-2 z-20 bg-[#FFD700] text-black px-3 py-2 rounded-full text-[11px] font-black shadow-lg">👑 Request Private</button>
+              )}
             </>
           )}
           {!isLive && !watching && (
@@ -203,7 +269,6 @@ export default function LoomiLive() {
         </div>
       </div>
 
-      {/* FEED TAB - NEW FEATURE 1 */}
       {tab==="feed" && (
         <div className="flex-1 bg-[#150826] overflow-y-auto pb-[80px]">
           <div className="p-3 flex justify-between items-center">
@@ -285,7 +350,19 @@ export default function LoomiLive() {
         </div>
       )}
 
-      {/* CREATE POST MODAL */}
+      {/* VIP MODALS */}
+      {showVipModal && (
+        <div className="absolute inset-0 z-[90] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowVipModal(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 space-y-3">
+          <h2 className="font-black text-center">👑 Request Private with @{watching}</h2><p className="text-xs text-white/60 text-center">5 minutes private 1-to-1. Coins deducted now.</p>
+          <div className="flex gap-2">{[50,100,200].map(v=><button key={v} onClick={()=>setVipPrice(v)} className={`flex-1 py-3 rounded-xl text-xs font-black ${vipPrice===v?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{v} 🪙</button>)}</div>
+          <button onClick={requestPrivate} className="w-full bg-[#FFD700] text-black py-3 rounded-full font-black">Send Request - {vipPrice} 🪙</button>
+          <button onClick={()=>setShowVipModal(false)} className="w-full text-white/60 text-xs">Cancel</button>
+        </div></div>
+      )}
+      {vipIncoming && (
+        <div className="absolute inset-0 z-[95] flex items-center justify-center p-6"><div className="bg-[#1E0B36] border border-[#FFD700] rounded-2xl p-5 w-full text-center"><h2 className="font-black">👑 Private Request</h2><p className="text-sm mt-2">@{vipIncoming.viewer} wants Private for <b className="text-[#FFD700]">{vipIncoming.price} 🪙</b></p><p className="text-xs text-white/60">5 mins 1-to-1</p><div className="flex gap-2 mt-4"><button onClick={declineVip} className="flex-1 bg-[#241040] border border-[#3A1B63] py-3 rounded-full font-black text-xs">Decline</button><button onClick={acceptVip} className="flex-1 bg-[#FFD700] text-black py-3 rounded-full font-black text-xs">Accept</button></div></div></div>
+      )}
+
       {showCreatePost && (
         <div className="absolute inset-0 z-[90] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowCreatePost(false)}></div><div className="bg-[#1E0B36] border-t border-[#3A1B63] rounded-t-[24px] p-4 space-y-3">
           <h2 className="font-black text-center">Create Post - Loomi-Live</h2>
