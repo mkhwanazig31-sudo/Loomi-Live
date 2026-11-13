@@ -53,11 +53,14 @@ export default function LoomiLive() {
   const [blockedUsers, setBlockedUsers] = useState<string[]>(()=>{ try{ return JSON.parse(localStorage.getItem("loomi_blocked")||"[]"); }catch{ return []; } });
   const [showSafety, setShowSafety] = useState<string | null>(null);
   const [reportReason, setReportReason] = useState("Rude / Harassment");
-  // FOLLOW + NOTIFICATIONS - NEW
   const [following, setFollowing] = useState<string[]>(()=>{ try{ return JSON.parse(localStorage.getItem("loomi_following")||"[]"); }catch{ return []; } });
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifs, setShowNotifs] = useState(false);
   const [notifiedLive, setNotifiedLive] = useState<Set<string>>(new Set());
+  // SEARCH + CATEGORIES - NEW
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("All");
+  const [userCategory, setUserCategory] = useState(()=> { try{ return localStorage.getItem("loomi_category") || "Chat"; }catch{ return "Chat"; } });
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
@@ -90,7 +93,6 @@ export default function LoomiLive() {
     }, (e)=>console.log("hosts error", e));
     return () => unsubHosts();
   }, [nickname]);
-  // FOLLOW NOTIFICATION: when someone you follow goes live
   useEffect(()=>{
     liveHosts.forEach((h:any)=>{
       if(following.includes(h.nickname) && !notifiedLive.has(h.nickname)){
@@ -98,7 +100,6 @@ export default function LoomiLive() {
         setNotifications(prev=>[{ id: Date.now().toString()+h.nickname, text: `@${h.nickname} is LIVE now 🔴`, user: h.nickname, time: Date.now() }, ...prev].slice(0,20));
       }
     });
-    // clear notified when they go offline so next live notifies again
     setNotifiedLive(prev=>{
       const next = new Set<string>();
       liveHosts.forEach((h:any)=>{ if(prev.has(h.nickname)) next.add(h.nickname); });
@@ -218,7 +219,7 @@ export default function LoomiLive() {
           videoRef.current.play().catch(()=>{});
         }
       }, 300);
-      await setDoc(doc(db, "live_rooms", nicknameRef.current), { nickname: nicknameRef.current, isLive:true, createdAt: serverTimestamp() });
+      await setDoc(doc(db, "live_rooms", nicknameRef.current), { nickname: nicknameRef.current, isLive:true, category: userCategory, createdAt: serverTimestamp() });
       onSnapshot(collection(db, `live_rooms/${nicknameRef.current}/viewers`), async snap => {
         for(const change of snap.docChanges()){ if(change.type==="added"){ const viewerId = change.doc.id; const data = change.doc.data() as any; if(!data.offer || pcsRef.current.has(viewerId)) continue; const pc = new RTCPeerConnection(ICE); pcsRef.current.set(viewerId, pc); stream.getTracks().forEach(t=> pc.addTrack(t, stream)); pc.onicecandidate = e => { if(e.candidate) addDoc(collection(db, `live_rooms/${nicknameRef.current}/viewers/${viewerId}/candidates_host`), { candidate: e.candidate.toJSON() }); }; onSnapshot(collection(db, `live_rooms/${nicknameRef.current}/viewers/${viewerId}/candidates_viewer`), s => { s.docChanges().forEach(async ch=>{ if(ch.type==="added"){ try{ await pc.addIceCandidate(new RTCIceCandidate(ch.doc.data().candidate)); }catch{} } }); }); await pc.setRemoteDescription(new RTCSessionDescription(data.offer)); const answer = await pc.createAnswer(); await pc.setLocalDescription(answer); await updateDoc(doc(db, `live_rooms/${nicknameRef.current}/viewers/${viewerId}`), { answer: { sdp: answer.sdp, type: answer.type } }); } }
       });
@@ -267,7 +268,6 @@ export default function LoomiLive() {
     setShowSafety(null);
     alert(`Reported @${user} for ${reportReason}`);
   };
-  // FOLLOW - NEW
   const toggleFollow = async (user: string) => {
     if(user===nickname) return;
     const isFollowing = following.includes(user);
@@ -342,6 +342,23 @@ export default function LoomiLive() {
   };
   const rankings = useMemo(()=>{ const map:Record<string,number>={}; chat.forEach((c:any)=>{ if(c.gift) map[c.user]=(map[c.user]||0)+(c.cost||1); }); return Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([user,pts],i)=>({user,pts,rank:i+1})); },[chat]);
   const fmtTime = (s:number) => `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+  // SEARCH + CATEGORIES LOGIC
+  const categories = ["All","Girls","Boys","Music","Chat","Gaming","Dancing"];
+  const getCategoryFor = (name: string) => {
+    const cats = ["Girls","Boys","Music","Chat","Gaming","Dancing"];
+    let sum = 0; for(let i=0;i<name.length;i++) sum+=name.charCodeAt(i);
+    return cats[sum % cats.length];
+  };
+  const filteredHosts = liveHosts.filter((h:any)=>{
+    const matchesSearch = h.nickname.toLowerCase().includes(searchQuery.toLowerCase());
+    const hostCat = h.category || getCategoryFor(h.nickname);
+    const matchesCat = selectedCategory==="All" || hostCat===selectedCategory;
+    return matchesSearch && matchesCat;
+  });
+  const filteredPosts = posts.filter(p=>{
+    if(!searchQuery) return true;
+    return p.creator.toLowerCase().includes(searchQuery.toLowerCase()) || p.caption.toLowerCase().includes(searchQuery.toLowerCase());
+  });
 
   if(!nickname) return (
     <div className="min-h-screen bg-[#150826] text-white flex items-center justify-center max-w-[430px] mx-auto p-6">
@@ -453,9 +470,10 @@ export default function LoomiLive() {
             <p className="text-sm font-black">FEED <span className="text-[#FFD700]">✨</span> <span className="text-white/50 text-xs font-normal">Post for money</span></p>
             <button onClick={()=>setShowCreatePost(true)} className="bg-[#FFD700] text-black px-4 py-2 rounded-full text-xs font-black">+ Create Post</button>
           </div>
-          {posts.length===0 && <p className="text-center text-white/40 text-xs mt-10 px-6">No posts yet. Be first to post! Tap + Create Post - choose FREE or LOCKED.</p>}
+          {searchQuery && <p className="px-3 pb-2 text-xs text-[#FFD700]">Showing {filteredPosts.length} posts for "{searchQuery}" - clear search in Discover</p>}
+          {filteredPosts.length===0 && <p className="text-center text-white/40 text-xs mt-10 px-6">No posts yet. Be first to post! Tap + Create Post - choose FREE or LOCKED.</p>}
           <div className="space-y-3 px-3">
-            {posts.map(p=>{
+            {filteredPosts.map(p=>{
               const isUnlocked = !p.isLocked || p.unlockedBy?.includes(nickname) || p.creator===nickname;
               return (
                 <div key={p.id} className="bg-[#241040] border border-[#3A1B63] rounded-2xl overflow-hidden">
@@ -484,17 +502,37 @@ export default function LoomiLive() {
 
       {tab==="discover" && (
         <div className="flex-1 bg-[#150826] overflow-y-auto pb-[70px]">
-          <div className="p-3">
-            <p className="text-xs font-bold mb-2 text-[#FFD700]">Discover LIVE - Users who entered username appear here</p>
+          <div className="p-3 space-y-3">
+            <div className="flex gap-2">
+              <input value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="🔍 Search @username..." className="flex-1 bg-[#241040] border border-[#3A1B63] rounded-full px-4 py-2.5 text-sm outline-none placeholder:text-white/40" />
+              {searchQuery && <button onClick={()=>setSearchQuery("")} className="bg-[#241040] border border-[#3A1B63] px-3 rounded-full text-xs">✕</button>}
+            </div>
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {categories.map(c=>(
+                <button key={c} onClick={()=>setSelectedCategory(c)} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold ${selectedCategory===c?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{c}</button>
+              ))}
+            </div>
+            <p className="text-xs font-bold text-[#FFD700]">{filteredHosts.length} live in {selectedCategory} {searchQuery && `for "${searchQuery}"`}</p>
             <div className="flex gap-3 overflow-x-auto">
               <div className="text-center min-w-[56px]"><div onClick={goLive} className="w-14 h-14 rounded-full bg-[#FFD700] text-black flex items-center justify-center font-black cursor-pointer">+</div><p className="text-[11px] mt-1">Go LIVE</p></div>
-              {liveHosts.map((h:any)=>(
+              {filteredHosts.map((h:any)=>(
                 <div key={h.nickname} className="text-center min-w-[72px]">
                   <div onClick={()=>watchHost(h.nickname)} className="w-14 h-14 mx-auto rounded-full bg-red-600 border-2 border-[#FFD700] flex items-center justify-center animate-pulse cursor-pointer">🔴</div>
                   <p className="text-[11px] mt-1 truncate w-14 mx-auto">@{h.nickname}</p>
+                  <p className="text-[9px] text-white/40">{h.category || getCategoryFor(h.nickname)}</p>
                   <button onClick={()=>toggleFollow(h.nickname)} className={`mt-1 px-3 py-1 rounded-full text-[10px] font-black ${following.includes(h.nickname)?"bg-[#241040] border border-[#3A1B63] text-white/60":"bg-[#FFD700] text-black"}`}>{following.includes(h.nickname)?"Following ✓":"Follow"}</button>
                 </div>
               ))}
+            </div>
+            {filteredHosts.length===0 && <p className="text-center text-white/40 text-xs mt-2">No live in {selectedCategory} {searchQuery && `for "${searchQuery}"`} - try All</p>}
+            <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-3">
+              <p className="text-xs font-black">Your Category - how others find you</p>
+              <div className="flex gap-2 overflow-x-auto mt-2">
+                {categories.filter(c=>c!=="All").map(c=>(
+                  <button key={c} onClick={()=>{ setUserCategory(c); localStorage.setItem("loomi_category", c); }} className={`whitespace-nowrap px-3 py-1.5 rounded-full text-[11px] font-bold ${userCategory===c?"bg-[#FFD700] text-black":"bg-[#150826] border border-[#3A1B63]"}`}>{c}</button>
+                ))}
+              </div>
+              <p className="text-[11px] text-white/50 mt-2">You are listed as: <b className="text-[#FFD700]">{userCategory}</b></p>
             </div>
           </div>
           <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl mx-3 h-64 flex items-center justify-center text-white/40 text-sm">LIVE Preview Area</div>
