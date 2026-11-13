@@ -50,6 +50,10 @@ export default function LoomiLive() {
   const [showFloaters, setShowFloaters] = useState(true);
   const [chatError, setChatError] = useState("");
   const [camError, setCamError] = useState("");
+  // SAFETY - NEW - does not delete anything
+  const [blockedUsers, setBlockedUsers] = useState<string[]>(()=>{ try{ return JSON.parse(localStorage.getItem("loomi_blocked")||"[]"); }catch{ return []; } });
+  const [showSafety, setShowSafety] = useState<string | null>(null);
+  const [reportReason, setReportReason] = useState("Rude / Harassment");
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
@@ -68,7 +72,6 @@ export default function LoomiLive() {
     const savedKeys = localStorage.getItem("loomi_keys");
     if(savedKeys) setKeys(parseInt(savedKeys));
   }, []);
-  // CAM FIX: re-attach stream when isLive changes
   useEffect(() => {
     if(isLive && streamRef.current && videoRef.current){
       videoRef.current.srcObject = streamRef.current;
@@ -144,7 +147,7 @@ export default function LoomiLive() {
           const data = change.doc.data() as any;
           const key = change.doc.id;
           if(data.gift && data.user !== nicknameRef.current){ triggerGift(data.gift); }
-          if(!seenChatRef.current.has(key) && !data.gift){
+          if(!seenChatRef.current.has(key) && !data.gift && !blockedUsers.includes(data.user)){
             seenChatRef.current.add(key);
             addFloater(data.user, data.msg);
           }
@@ -172,22 +175,17 @@ export default function LoomiLive() {
     for(let i=0;i<count;i++){ setTimeout(()=>{ const id = Math.random().toString(36).slice(2)+i; const x = Math.random()*70+10; setGifts(g=>[...g, { id, emoji, x, type }]); setTimeout(()=> setGifts(g=>g.filter(f=>f.id!==id)), 3000); }, i*100); }
   };
   const saveNickname = () => { const clean = tempNick.trim().toLowerCase().replace(/[^a-z0-9_]/g,""); if(clean.length<3) return alert("Min 3"); localStorage.setItem("loomi_nickname", clean); nicknameRef.current = clean; setNickname(clean); };
-  // CAM FIXED goLive
   const goLive = async () => {
     try {
       setCamError("");
-      // Kill old black stream first
       if(streamRef.current){ streamRef.current.getTracks().forEach(t=>t.stop()); streamRef.current = null; }
       if(videoRef.current) videoRef.current.srcObject = null;
       pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear();
       setChat([]); setFloaters([]); seenChatRef.current.clear();
-
       const stream = await navigator.mediaDevices.getUserMedia({video:{width:640, height:480, facingMode:"user"}, audio:true});
       console.log("CAM TRACKS:", stream.getTracks().map(t=>t.kind + " enabled:" + t.enabled + " state:" + t.readyState));
       stream.getTracks().forEach(t=>{ t.enabled = true; });
       streamRef.current = stream;
-
-      // Set video BEFORE setIsLive so it never stays hidden
       if(videoRef.current){
         videoRef.current.srcObject = stream;
         videoRef.current.muted = true;
@@ -195,14 +193,12 @@ export default function LoomiLive() {
         try{ await videoRef.current.play(); }catch(e){ console.log("play error", e); }
       }
       setIsLive(true); setWatching(null); setTab("live");
-      // Re-attach after render - fixes black on some phones
       setTimeout(()=>{
         if(videoRef.current && streamRef.current){
           videoRef.current.srcObject = streamRef.current;
           videoRef.current.play().catch(()=>{});
         }
       }, 300);
-
       await setDoc(doc(db, "live_rooms", nicknameRef.current), { nickname: nicknameRef.current, isLive:true, createdAt: serverTimestamp() });
       onSnapshot(collection(db, `live_rooms/${nicknameRef.current}/viewers`), async snap => {
         for(const change of snap.docChanges()){ if(change.type==="added"){ const viewerId = change.doc.id; const data = change.doc.data() as any; if(!data.offer || pcsRef.current.has(viewerId)) continue; const pc = new RTCPeerConnection(ICE); pcsRef.current.set(viewerId, pc); stream.getTracks().forEach(t=> pc.addTrack(t, stream)); pc.onicecandidate = e => { if(e.candidate) addDoc(collection(db, `live_rooms/${nicknameRef.current}/viewers/${viewerId}/candidates_host`), { candidate: e.candidate.toJSON() }); }; onSnapshot(collection(db, `live_rooms/${nicknameRef.current}/viewers/${viewerId}/candidates_viewer`), s => { s.docChanges().forEach(async ch=>{ if(ch.type==="added"){ try{ await pc.addIceCandidate(new RTCIceCandidate(ch.doc.data().candidate)); }catch{} } }); }); await pc.setRemoteDescription(new RTCSessionDescription(data.offer)); const answer = await pc.createAnswer(); await pc.setLocalDescription(answer); await updateDoc(doc(db, `live_rooms/${nicknameRef.current}/viewers/${viewerId}`), { answer: { sdp: answer.sdp, type: answer.type } }); } }
@@ -231,6 +227,28 @@ export default function LoomiLive() {
     onSnapshot(doc(db, `live_rooms/${hostNick}/viewers/${nicknameRef.current}`), async snap => { const data=snap.data() as any; if(data?.answer && pc.signalingState==="have-local-offer"){ await pc.setRemoteDescription(new RTCSessionDescription(data.answer)); } });
   };
   const stopWatching = async () => { pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear(); if(remoteRef.current) remoteRef.current.srcObject=null; remoteStreamRef.current = new MediaStream(); const w=watching; setWatching(null); try{ if(w) await deleteDoc(doc(db, `live_rooms/${w}/viewers/${nicknameRef.current}`)); }catch{} setChat([]); setFloaters([]); seenChatRef.current.clear(); setVipActive(false); setVipWith(null); };
+  // SAFETY FUNCTIONS - NEW
+  const blockUser = (user: string) => {
+    if(!blockedUsers.includes(user)){
+      const next = [...blockedUsers, user];
+      setBlockedUsers(next);
+      localStorage.setItem("loomi_blocked", JSON.stringify(next));
+    }
+    setShowSafety(null);
+    alert(`@${user} blocked - you won't see their chat`);
+  };
+  const unblockUser = (user: string) => {
+    const next = blockedUsers.filter(u=>u!==user);
+    setBlockedUsers(next);
+    localStorage.setItem("loomi_blocked", JSON.stringify(next));
+  };
+  const reportUser = async (user: string) => {
+    try{
+      await addDoc(collection(db, "loomi_reports"), { reporter: nicknameRef.current, reported: user, room: currentRoom, reason: reportReason, createdAt: serverTimestamp() });
+    }catch(e){ console.log(e); }
+    setShowSafety(null);
+    alert(`Reported @${user} for ${reportReason}`);
+  };
   const sendChat = async () => {
     const t = input.trim();
     if(!t) return;
@@ -375,7 +393,7 @@ export default function LoomiLive() {
         {chatError && <div className="bg-red-600/90 px-3 py-1.5 text-[11px] text-center">{chatError}</div>}
         <div className="bg-[#150826] p-2 h-[20vh] overflow-y-auto space-y-1">
           {chat.length===0 && <p className="text-white/30 text-xs text-center pt-2">No comments yet - be first! 💬</p>}
-          {chat.map((c,i)=><p key={c.id || i} className="text-[13px]"><span className="text-[#FFD700] font-bold">@{c.user}:</span> <span className="text-white/90">{c.msg}</span></p>)}
+          {chat.filter(c=>!blockedUsers.includes(c.user)).map((c,i)=><p key={c.id || i} className="text-[13px] cursor-pointer" onClick={()=>{ if(c.user!==nickname) setShowSafety(c.user); }}><span className="text-[#FFD700] font-bold">@{c.user}:</span> <span className="text-white/90">{c.msg}</span> {c.user!==nickname && <span className="text-white/30 text-[10px]"> • tap to report</span>}</p>)}
           <div ref={chatEndRef} />
         </div>
         <div className="bg-[#241040] border-t border-[#3A1B63] p-2 flex gap-2 overflow-x-auto relative z-30">
@@ -492,6 +510,7 @@ export default function LoomiLive() {
               <div key={c.id} className="flex justify-between py-2 border-b border-[#3A1B63] text-sm"><span>{c.amount} 🪙 • {c.bankName}</span><span className={`text-xs font-bold ${c.status==="pending"?"text-yellow-400":"text-green-400"}`}>{c.status}</span></div>
             ))}
           </div>
+          {blockedUsers.length>0 && <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-4"><p className="text-sm font-black">🛡️ Blocked Users</p>{blockedUsers.map(u=><div key={u} className="flex justify-between py-2 text-sm"><span>@{u}</span><button onClick={()=>unblockUser(u)} className="text-[#FFD700] text-xs underline">Unblock</button></div>)}</div>}
         </div>
       )}
 
@@ -560,6 +579,24 @@ export default function LoomiLive() {
             <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>⚙️</span><p className="text-[14px] font-bold text-white">Settings and privacy</p></div><span className="text-white/40">›</span></div>
           </div>
         </div>
+      )}
+
+      {showSafety && (
+        <div className="absolute inset-0 z-[95] flex items-center justify-center p-6"><div className="bg-[#1E0B36] border border-red-500 rounded-2xl p-5 w-full">
+          <h2 className="font-black text-center">🛡️ Safety - @{showSafety}</h2>
+          <p className="text-xs text-white/60 text-center mt-1">What happened?</p>
+          <div className="flex flex-col gap-2 mt-3">
+            {["Rude / Harassment","Sexual / Nude","Spam / Scam","Hate Speech"].map(r=>(
+              <button key={r} onClick={()=>setReportReason(r)} className={`py-2.5 rounded-xl text-xs font-bold ${reportReason===r?"bg-red-600 text-white":"bg-[#241040] border border-[#3A1B63]"}`}>{r}</button>
+            ))}
+          </div>
+          <div className="flex gap-2 mt-4">
+            <button onClick={()=>blockUser(showSafety)} className="flex-1 bg-[#241040] border border-[#3A1B63] py-3 rounded-full font-black text-xs">🚫 Block</button>
+            <button onClick={()=>reportUser(showSafety)} className="flex-1 bg-red-600 py-3 rounded-full font-black text-xs">🚨 Report</button>
+          </div>
+          <button onClick={()=>setShowSafety(null)} className="w-full text-white/60 text-xs mt-3">Cancel</button>
+          {blockedUsers.length>0 && <div className="mt-3 border-t border-[#3A1B63] pt-2"><p className="text-[11px] text-white/50">Blocked: {blockedUsers.join(", ")}</p><button onClick={()=>{ setBlockedUsers([]); localStorage.setItem("loomi_blocked","[]"); }} className="text-[11px] text-[#FFD700] underline">Unblock all</button></div>}
+        </div></div>
       )}
 
       <div className="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto bg-[#150826] border-t border-[#3A1B63] flex justify-around items-center py-2.5 z-[60]">
