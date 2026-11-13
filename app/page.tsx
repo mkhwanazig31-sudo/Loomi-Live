@@ -2,14 +2,24 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState, useRef, useMemo } from "react";
-import { db } from "../lib/firebase";
+import { db, auth } from "../lib/firebase";
 import { collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, doc, setDoc, deleteDoc, updateDoc, getDocs, where } from "firebase/firestore";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
+
 const ICE = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }, { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" }, { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" }, { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" }] };
 type Fly = { id: string; emoji: string; x: number; type: string };
 type Post = { id: string; creator: string; caption: string; mediaUrl: string; isLocked: boolean; price: number; likes: number; unlockedBy?: string[]; createdAt?: any };
 type Floater = { id: string; user: string; msg: string; top: number; duration: number; color: string };
 
 export default function LoomiLive() {
+  // ===== AUTH - YOUR OWN ACCOUNT LIKE TIKTOK =====
+  const [authUser, setAuthUser] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPass, setAuthPass] = useState("");
+  const [authMode, setAuthMode] = useState<"login"|"signup">("signup");
+  const [authError, setAuthError] = useState("");
+
   const [nickname, setNickname] = useState("");
   const [tempNick, setTempNick] = useState("");
   const [keys, setKeys] = useState(100);
@@ -60,7 +70,6 @@ export default function LoomiLive() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [userCategory, setUserCategory] = useState(()=> { try{ return localStorage.getItem("loomi_category") || "Chat"; }catch{ return "Chat"; } });
-  // LAUNCH POLISH - NEW
   const [dailyClaimed, setDailyClaimed] = useState(()=> { try{ return localStorage.getItem("loomi_daily") === new Date().toDateString(); }catch{ return false; } });
   const [showWelcome, setShowWelcome] = useState(()=> { try{ return !localStorage.getItem("loomi_seen_welcome"); }catch{ return false; } });
   
@@ -73,13 +82,69 @@ export default function LoomiLive() {
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const seenChatRef = useRef<Set<string>>(new Set());
 
+  // ===== AUTH LISTENER - checks if user is logged in =====
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (user)=>{
+      setAuthLoading(false);
+      if(user){
+        setAuthUser(user);
+        try{
+          const snap = await getDocs(query(collection(db, "loomi_users"), where("uid","==", user.uid)));
+          if(!snap.empty){
+            const data = snap.docs[0].data() as any;
+            setNickname(data.username);
+            nicknameRef.current = data.username;
+            localStorage.setItem("loomi_nickname", data.username);
+            if(data.keys !== undefined){ setKeys(data.keys); localStorage.setItem("loomi_keys", data.keys.toString()); }
+            if(data.category) setUserCategory(data.category);
+            if(data.following) { setFollowing(data.following); localStorage.setItem("loomi_following", JSON.stringify(data.following)); }
+          }
+        }catch(e){ console.log("profile load", e); }
+      } else {
+        setAuthUser(null);
+        setNickname("");
+        nicknameRef.current = "";
+      }
+    });
+    return ()=>unsub();
+  }, []);
+
+  // ===== CREATE ACCOUNT / LOGIN =====
+  const handleAuth = async () => {
+    setAuthError("");
+    if(!authEmail.includes("@")) return setAuthError("Enter a real email like you@gmail.com");
+    if(authPass.length < 6) return setAuthError("Password must be 6+ characters");
+    try{
+      if(authMode==="signup"){
+        const clean = tempNick.trim().toLowerCase().replace(/[^a-z0-9_]/g,"");
+        if(clean.length < 3) return setAuthError("Pick username min 3 letters - e.g. thabo");
+        // Check if username already taken
+        const q = query(collection(db, "loomi_users"), where("username","==", clean));
+        const snap = await getDocs(q);
+        if(!snap.empty) return setAuthError(`@${clean} already taken - pick another`);
+        const cred = await createUserWithEmailAndPassword(auth, authEmail.trim(), authPass);
+        await setDoc(doc(db, "loomi_users", cred.user.uid), { uid: cred.user.uid, username: clean, email: authEmail.trim().toLowerCase(), keys: 100, category: "Chat", following: [], createdAt: serverTimestamp() });
+        setNickname(clean); nicknameRef.current = clean;
+      } else {
+        await signInWithEmailAndPassword(auth, authEmail.trim(), authPass);
+      }
+    }catch(e:any){
+      console.log(e);
+      if(e.code==="auth/email-already-in-use") setAuthError("This email already has account - tap Login below");
+      else if(e.code==="auth/invalid-credential" || e.code==="auth/wrong-password") setAuthError("Wrong email or password - try again");
+      else if(e.code==="auth/user-not-found") setAuthError("No account with this email - tap Create one");
+      else setAuthError(e.message || "Auth error - try again");
+    }
+  };
+  const handleLogout = async () => {
+    try{ await signOut(auth); }catch{}
+    localStorage.clear();
+    location.reload();
+  };
+
   useEffect(() => { nicknameRef.current = nickname; }, [nickname]);
   useEffect(() => {
     if (typeof window !== "undefined") remoteStreamRef.current = new MediaStream();
-    const saved = localStorage.getItem("loomi_nickname");
-    if (saved) { setNickname(saved); nicknameRef.current = saved; }
-    const savedKeys = localStorage.getItem("loomi_keys");
-    if(savedKeys) setKeys(parseInt(savedKeys));
   }, []);
   useEffect(() => {
     if(isLive && streamRef.current && videoRef.current){
@@ -196,7 +261,6 @@ export default function LoomiLive() {
     const count = type==="heart" ? 6 : 1;
     for(let i=0;i<count;i++){ setTimeout(()=>{ const id = Math.random().toString(36).slice(2)+i; const x = Math.random()*70+10; setGifts(g=>[...g, { id, emoji, x, type }]); setTimeout(()=> setGifts(g=>g.filter(f=>f.id!==id)), 3000); }, i*100); }
   };
-  const saveNickname = () => { const clean = tempNick.trim().toLowerCase().replace(/[^a-z0-9_]/g,""); if(clean.length<3) return alert("Min 3"); localStorage.setItem("loomi_nickname", clean); nicknameRef.current = clean; setNickname(clean); };
   const goLive = async () => {
     try {
       setCamError("");
@@ -205,7 +269,6 @@ export default function LoomiLive() {
       pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear();
       setChat([]); setFloaters([]); seenChatRef.current.clear();
       const stream = await navigator.mediaDevices.getUserMedia({video:{width:640, height:480, facingMode:"user"}, audio:true});
-      console.log("CAM TRACKS:", stream.getTracks().map(t=>t.kind + " enabled:" + t.enabled + " state:" + t.readyState));
       stream.getTracks().forEach(t=>{ t.enabled = true; });
       streamRef.current = stream;
       if(videoRef.current){
@@ -276,12 +339,12 @@ export default function LoomiLive() {
     const next = isFollowing ? following.filter(u=>u!==user) : [...following, user];
     setFollowing(next);
     localStorage.setItem("loomi_following", JSON.stringify(next));
+    if(authUser) { try{ await updateDoc(doc(db, "loomi_users", authUser.uid), { following: next }); }catch{} }
     if(!isFollowing){
       try{ await addDoc(collection(db, "loomi_follows"), { follower: nicknameRef.current, following: user, createdAt: serverTimestamp() }); }catch{}
       setNotifications(prev=>[{ id: Date.now().toString(), text: `You followed @${user} ✅`, user, time: Date.now() }, ...prev].slice(0,20));
     }
   };
-  // LAUNCH POLISH FUNCTIONS
   const claimDaily = () => {
     if(dailyClaimed) return;
     const newKeys = keys + 10;
@@ -378,12 +441,30 @@ export default function LoomiLive() {
     return p.creator.toLowerCase().includes(searchQuery.toLowerCase()) || p.caption.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
-  if(!nickname) return (
+  // ===== LOADING =====
+  if(authLoading) return (
+    <div className="min-h-screen bg-[#150826] text-white flex items-center justify-center max-w-[430px] mx-auto"><p className="font-black text-[#FFD700]">LOOMI-LIVE loading...</p></div>
+  );
+
+  // ===== LOGIN / SIGNUP SCREEN - LIKE TIKTOK =====
+  if(!authUser) return (
     <div className="min-h-screen bg-[#150826] text-white flex items-center justify-center max-w-[430px] mx-auto p-6">
-      <div className="w-full text-center"><p className="text-[11px] tracking-[0.3em] text-[#FFD700] font-black">LOOMI-LIVE</p><h1 className="text-[32px] font-black mt-2">Loomi ✨ Username</h1><p className="text-xs text-white/50 mt-1">Will appear in LIVE, rankings, balance</p><input value={tempNick} onChange={e=>setTempNick(e.target.value)} placeholder="your name" className="w-full mt-6 bg-[#241040] border border-[#3A1B63] rounded-2xl p-4 text-white placeholder:text-white/40 outline-none focus:border-[#FFD700]" /><button onClick={saveNickname} className="w-full mt-4 bg-[#FFD700] text-black py-4 rounded-2xl font-black">Continue</button></div>
+      <div className="w-full">
+        <p className="text-[11px] tracking-[0.3em] text-[#FFD700] font-black text-center">LOOMI-LIVE</p>
+        <h1 className="text-[28px] font-black mt-2 text-center">{authMode==="signup" ? "Create Account ✨" : "Welcome Back 🔴"}</h1>
+        <p className="text-xs text-white/50 mt-1 text-center">Your own account like TikTok - coins & followers saved</p>
+        {authMode==="signup" && <input value={tempNick} onChange={e=>setTempNick(e.target.value)} placeholder="@username - e.g. thabo" className="w-full mt-6 bg-[#241040] border border-[#3A1B63] rounded-2xl p-4 text-white placeholder:text-white/40 outline-none focus:border-[#FFD700]" />}
+        <input value={authEmail} onChange={e=>setAuthEmail(e.target.value)} placeholder="Email - you@gmail.com" type="email" className="w-full mt-3 bg-[#241040] border border-[#3A1B63] rounded-2xl p-4 text-white placeholder:text-white/40 outline-none focus:border-[#FFD700]" />
+        <input value={authPass} onChange={e=>setAuthPass(e.target.value)} placeholder="Password - min 6 chars" type="password" className="w-full mt-3 bg-[#241040] border border-[#3A1B63] rounded-2xl p-4 text-white placeholder:text-white/40 outline-none focus:border-[#FFD700]" />
+        {authError && <p className="mt-3 bg-red-600/20 border border-red-500 rounded-xl p-3 text-xs text-center text-red-300">{authError}</p>}
+        <button onClick={handleAuth} className="w-full mt-4 bg-[#FFD700] text-black py-4 rounded-2xl font-black">{authMode==="signup" ? "Create Account" : "Login"}</button>
+        <button onClick={()=>{ setAuthMode(authMode==="signup"?"login":"signup"); setAuthError(""); }} className="w-full mt-3 text-[#FFD700] text-xs underline">{authMode==="signup" ? "Already have account? Login" : "No account? Create one"}</button>
+        <p className="text-[11px] text-white/40 text-center mt-4">By continuing you agree to be nice. No stealing usernames. 🛡️</p>
+      </div>
     </div>
   );
 
+  // ===== MAIN APP - ONLY AFTER LOGIN =====
   return (
     <div className={`min-h-screen bg-[#150826] text-white flex flex-col max-w-[430px] mx-auto relative overflow-hidden ${vipActive?"ring-4 ring-[#FFD700]":""}`}>
       <div className="flex justify-between items-center px-4 pt-3 pb-1 bg-[#150826]">
@@ -408,7 +489,7 @@ export default function LoomiLive() {
         <span className="font-black">@{nickname} <span className="text-[#FFD700] text-[10px]">• LIVE</span></span>
         <div className="flex gap-2">
           <button onClick={()=>setShowFloaters(v=>!v)} className={`px-2 py-1 rounded-full text-[10px] font-bold ${showFloaters?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{showFloaters?"💬 Fly: ON":"💬 Fly: OFF"}</button>
-          <button onClick={()=>{ localStorage.clear(); location.reload(); }} className="bg-[#241040] border border-[#3A1B63] px-3 py-1 rounded-full text-white/70">Logout</button>
+          <button onClick={handleLogout} className="bg-[#241040] border border-[#3A1B63] px-3 py-1 rounded-full text-white/70">Logout</button>
         </div>
       </div>
 
@@ -423,8 +504,8 @@ export default function LoomiLive() {
 
       <div className={`relative bg-[#1E0B36] w-full overflow-hidden ${tab==="live" ? "flex-1 flex flex-col pb-[70px]" : "hidden"}`}>
         <div className="relative flex-1 aspect-[9/14] overflow-hidden bg-black">
-          <video ref={videoRef} autoPlay muted playsInline onClick={()=>{ if(videoRef.current) videoRef.current.play().catch(()=>{}); }} className={`w-full h-full object-cover ${isLive ? "block" : "hidden"}`} style={{ transform: "scaleX(-1)" }} />
-          <video ref={remoteRef} autoPlay playsInline onClick={()=>{ if(remoteRef.current) remoteRef.current.play().catch(()=>{}); }} className={`w-full h-full object-cover bg-black ${watching ? "block" : "hidden"}`} />
+          <video ref={videoRef} autoPlay muted playsInline className={`w-full h-full object-cover ${isLive ? "block" : "hidden"}`} style={{ transform: "scaleX(-1)" }} />
+          <video ref={remoteRef} autoPlay playsInline className={`w-full h-full object-cover bg-black ${watching ? "block" : "hidden"}`} />
           {showFloaters && (isLive || watching) && (
             <div className="absolute inset-0 pointer-events-none overflow-hidden z-[15]">
               {floaters.map(f=>(
@@ -469,16 +550,16 @@ export default function LoomiLive() {
           <div ref={chatEndRef} />
         </div>
         <div className="bg-[#241040] border-t border-[#3A1B63] p-2 flex gap-2 overflow-x-auto relative z-30">
-          <button onClick={()=>sendGift(0,"❤️")} className="min-w-[64px] bg-[#150826] border border-[#3A1B63] rounded-xl py-2 text-xs font-bold active:scale-95">❤️<br/><span className="text-white/60">FREE</span></button>
-          <button onClick={()=>sendGift(1,"🌹")} className="min-w-[64px] bg-[#150826] border border-[#3A1B63] rounded-xl py-2 text-xs font-bold active:scale-95">🌹<br/>1 🪙</button>
-          <button onClick={()=>sendGift(5,"🚀")} className="min-w-[64px] bg-[#150826] border border-[#3A1B63] rounded-xl py-2 text-xs font-bold active:scale-95">🚀<br/>5 🪙</button>
-          <button onClick={()=>sendGift(10,"👑")} className="min-w-[64px] bg-[#150826] border border-[#3A1B63] rounded-xl py-2 text-xs font-bold active:scale-95">👑<br/>10</button>
-          <button onClick={()=>sendGift(50,"💎")} className="min-w-[64px] bg-[#FFD700] text-black rounded-xl py-2 text-xs font-black active:scale-95">💎<br/>50</button>
-          <button onClick={()=>sendGift(100,"🔥")} className="min-w-[64px] bg-orange-600 rounded-xl py-2 text-xs font-bold active:scale-95">🔥<br/>100</button>
+          <button onClick={()=>sendGift(0,"❤️")} className="min-w-[64px] bg-[#150826] border border-[#3A1B63] rounded-xl py-2 text-xs font-bold">❤️<br/><span className="text-white/60">FREE</span></button>
+          <button onClick={()=>sendGift(1,"🌹")} className="min-w-[64px] bg-[#150826] border border-[#3A1B63] rounded-xl py-2 text-xs font-bold">🌹<br/>1 🪙</button>
+          <button onClick={()=>sendGift(5,"🚀")} className="min-w-[64px] bg-[#150826] border border-[#3A1B63] rounded-xl py-2 text-xs font-bold">🚀<br/>5 🪙</button>
+          <button onClick={()=>sendGift(10,"👑")} className="min-w-[64px] bg-[#150826] border border-[#3A1B63] rounded-xl py-2 text-xs font-bold">👑<br/>10</button>
+          <button onClick={()=>sendGift(50,"💎")} className="min-w-[64px] bg-[#FFD700] text-black rounded-xl py-2 text-xs font-black">💎<br/>50</button>
+          <button onClick={()=>sendGift(100,"🔥")} className="min-w-[64px] bg-orange-600 rounded-xl py-2 text-xs font-bold">🔥<br/>100</button>
         </div>
         <div className="p-2 flex gap-2 bg-[#150826] border-t border-[#3A1B63] relative z-30">
           <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter" && sendChat()} className="flex-1 bg-[#241040] border border-[#3A1B63] rounded-full px-4 py-2.5 text-sm outline-none placeholder:text-white/40" placeholder={currentRoom ? `Chat in @${currentRoom}` : "Go live first"} />
-          <button onClick={sendChat} className="bg-[#FFD700] text-black px-5 rounded-full text-sm font-black active:scale-95">Send</button>
+          <button onClick={sendChat} className="bg-[#FFD700] text-black px-5 rounded-full text-sm font-black">Send</button>
         </div>
       </div>
 
@@ -488,8 +569,8 @@ export default function LoomiLive() {
             <p className="text-sm font-black">FEED <span className="text-[#FFD700]">✨</span> <span className="text-white/50 text-xs font-normal">Post for money</span></p>
             <button onClick={()=>setShowCreatePost(true)} className="bg-[#FFD700] text-black px-4 py-2 rounded-full text-xs font-black">+ Create Post</button>
           </div>
-          {searchQuery && <p className="px-3 pb-2 text-xs text-[#FFD700]">Showing {filteredPosts.length} posts for "{searchQuery}" - clear search in Discover</p>}
-          {filteredPosts.length===0 && <p className="text-center text-white/40 text-xs mt-10 px-6">No posts yet. Be first to post! Tap + Create Post - choose FREE or LOCKED.</p>}
+          {searchQuery && <p className="px-3 pb-2 text-xs text-[#FFD700]">Showing {filteredPosts.length} posts for "{searchQuery}"</p>}
+          {filteredPosts.length===0 && <p className="text-center text-white/40 text-xs mt-10 px-6">No posts yet. Be first to post!</p>}
           <div className="space-y-3 px-3">
             {filteredPosts.map(p=>{
               const isUnlocked = !p.isLocked || p.unlockedBy?.includes(nickname) || p.creator===nickname;
@@ -542,12 +623,12 @@ export default function LoomiLive() {
                 </div>
               ))}
             </div>
-            {filteredHosts.length===0 && <p className="text-center text-white/40 text-xs mt-2">No live in {selectedCategory} {searchQuery && `for "${searchQuery}"`} - try All</p>}
+            {filteredHosts.length===0 && <p className="text-center text-white/40 text-xs mt-2">No live in {selectedCategory} - try All</p>}
             <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-3">
               <p className="text-xs font-black">Your Category - how others find you</p>
               <div className="flex gap-2 overflow-x-auto mt-2">
                 {categories.filter(c=>c!=="All").map(c=>(
-                  <button key={c} onClick={()=>{ setUserCategory(c); localStorage.setItem("loomi_category", c); }} className={`whitespace-nowrap px-3 py-1.5 rounded-full text-[11px] font-bold ${userCategory===c?"bg-[#FFD700] text-black":"bg-[#150826] border border-[#3A1B63]"}`}>{c}</button>
+                  <button key={c} onClick={()=>{ setUserCategory(c); localStorage.setItem("loomi_category", c); if(authUser) updateDoc(doc(db, "loomi_users", authUser.uid), { category: c }).catch(()=>{}); }} className={`whitespace-nowrap px-3 py-1.5 rounded-full text-[11px] font-bold ${userCategory===c?"bg-[#FFD700] text-black":"bg-[#150826] border border-[#3A1B63]"}`}>{c}</button>
                 ))}
               </div>
               <p className="text-[11px] text-white/50 mt-2">You are listed as: <b className="text-[#FFD700]">{userCategory}</b></p>
@@ -584,7 +665,7 @@ export default function LoomiLive() {
       {tab==="balance" && (
         <div className="flex-1 bg-[#150826] text-white p-3 space-y-3 overflow-y-auto pb-[80px]">
           <div className="bg-gradient-to-r from-[#FFD700] to-orange-500 text-black rounded-2xl p-4 flex justify-between items-center">
-            <div><p className="text-lg font-black">@{nickname}</p><p className="text-[11px] font-bold opacity-70">{userCategory} Creator • {following.length} Following</p></div>
+            <div><p className="text-lg font-black">@{nickname}</p><p className="text-[11px] font-bold opacity-70">{userCategory} Creator • {authUser?.email}</p></div>
             <button onClick={shareApp} className="bg-black text-white px-3 py-2 rounded-full text-xs font-black">↗ Share</button>
           </div>
           <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl text-center py-6">
@@ -610,7 +691,7 @@ export default function LoomiLive() {
           </div>
           <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-4">
             <p className="text-sm font-black">Cashout History</p>
-            {cashouts.length===0 ? <p className="text-xs text-white/50 mt-1">No cashouts yet. Tap Cash Out to request.</p> : cashouts.map(c=>(
+            {cashouts.length===0 ? <p className="text-xs text-white/50 mt-1">No cashouts yet.</p> : cashouts.map(c=>(
               <div key={c.id} className="flex justify-between py-2 border-b border-[#3A1B63] text-sm"><span>{c.amount} 🪙 • {c.bankName}</span><span className={`text-xs font-bold ${c.status==="pending"?"text-yellow-400":"text-green-400"}`}>{c.status}</span></div>
             ))}
           </div>
@@ -629,7 +710,6 @@ export default function LoomiLive() {
       {vipIncoming && (
         <div className="absolute inset-0 z-[95] flex items-center justify-center p-6"><div className="bg-[#1E0B36] border border-[#FFD700] rounded-2xl p-5 w-full text-center"><h2 className="font-black">👑 Private Request</h2><p className="text-sm mt-2">@{vipIncoming.viewer} wants Private for <b className="text-[#FFD700]">{vipIncoming.price} 🪙</b></p><p className="text-xs text-white/60">5 mins 1-to-1</p><div className="flex gap-2 mt-4"><button onClick={declineVip} className="flex-1 bg-[#241040] border border-[#3A1B63] py-3 rounded-full font-black text-xs">Decline</button><button onClick={acceptVip} className="flex-1 bg-[#FFD700] text-black py-3 rounded-full font-black text-xs">Accept</button></div></div></div>
       )}
-
       {showCreatePost && (
         <div className="absolute inset-0 z-[90] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowCreatePost(false)}></div><div className="bg-[#1E0B36] border-t border-[#3A1B63] rounded-t-[24px] p-4 space-y-3">
           <h2 className="font-black text-center">Create Post - Loomi-Live</h2>
@@ -644,7 +724,6 @@ export default function LoomiLive() {
           <button onClick={()=>setShowCreatePost(false)} className="w-full text-white/60 text-xs">Cancel</button>
         </div></div>
       )}
-
       {showCashout && (
         <div className="absolute inset-0 z-[90] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowCashout(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 space-y-3">
           <h2 className="font-black text-center">💸 Cash Out - Loomi-Live</h2>
@@ -657,16 +736,15 @@ export default function LoomiLive() {
           <button onClick={()=>setShowCashout(false)} className="w-full text-white/60 text-xs">Cancel</button>
         </div></div>
       )}
-
       {showRecharge && (
-        <div className="absolute inset-0 z-50 flex flex-col justify-end"><div className="flex-1 bg-black/60" onClick={()=>setShowRecharge(false)}></div><div className="bg-white text-black rounded-t-[24px] p-4"><h2 className="text-center font-black">Recharge - Loomi-Live</h2><div className="grid grid-cols-3 gap-2 mt-4">{[{c:5,r:"R 1,35"},{c:30,r:"R 8,09"},{c:40,r:"R 10,79"},{c:50,r:"R 13,45"},{c:70,r:"R 18,85"},{c:139,r:"R 37,39"}].map(p=><div key={p.c} onClick={()=>{ setKeys(k=>k+p.c); localStorage.setItem("loomi_keys",(keys+p.c).toString()); }} className="border rounded-xl p-3 text-center cursor-pointer active:scale-95"><p className="font-black">🪙 {p.c}</p><p className="text-xs">{p.r}</p></div>)}</div><button onClick={()=>setShowRecharge(false)} className="w-full mt-4 bg-black text-white py-3 rounded-full font-black">Close</button></div></div>
+        <div className="absolute inset-0 z-50 flex flex-col justify-end"><div className="flex-1 bg-black/60" onClick={()=>setShowRecharge(false)}></div><div className="bg-white text-black rounded-t-[24px] p-4"><h2 className="text-center font-black">Recharge - Loomi-Live</h2><div className="grid grid-cols-3 gap-2 mt-4">{[{c:5,r:"R 1,35"},{c:30,r:"R 8,09"},{c:40,r:"R 10,79"},{c:50,r:"R 13,45"},{c:70,r:"R 18,85"},{c:139,r:"R 37,39"}].map(p=><div key={p.c} onClick={()=>{ setKeys(k=>k+p.c); localStorage.setItem("loomi_keys",(keys+p.c).toString()); }} className="border rounded-xl p-3 text-center cursor-pointer"><p className="font-black">🪙 {p.c}</p><p className="text-xs">{p.r}</p></div>)}</div><button onClick={()=>setShowRecharge(false)} className="w-full mt-4 bg-black text-white py-3 rounded-full font-black">Close</button></div></div>
       )}
-
       {showDashboard && (
         <div className="absolute inset-0 z-[100] flex">
           <div className="flex-1 bg-black/60" onClick={()=>setShowDashboard(false)}></div>
           <div className="w-[78%] max-w-[320px] bg-[#150826] border-l border-[#3A1B63] h-full overflow-y-auto p-3 space-y-3">
             <div className="flex justify-between items-center p-1"><p className="font-black text-white">@{nickname}</p><button onClick={()=>setShowDashboard(false)} className="text-white text-xl">✕</button></div>
+            <p className="text-[11px] text-white/50 px-1">{authUser?.email}</p>
             <div onClick={()=>{setTab("balance"); setShowDashboard(false);}} className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-3.5 flex justify-between items-center cursor-pointer"><div className="flex items-center gap-3"><span>🪪</span><p className="font-bold text-[14px] text-white">Balance</p></div><span className="text-white/40">›</span></div>
             <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl divide-y divide-[#3A1B63]">
               <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>🕐</span><p className="text-[14px] font-bold text-white">Activity centre</p></div><span className="text-white/40">›</span></div>
@@ -681,10 +759,10 @@ export default function LoomiLive() {
               <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span className="text-[10px] border px-1">AD</span><p className="text-[14px] font-bold text-white">Ads Manager</p></div><span className="text-white/40">›</span></div>
             </div>
             <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>⚙️</span><p className="text-[14px] font-bold text-white">Settings and privacy</p></div><span className="text-white/40">›</span></div>
+            <button onClick={handleLogout} className="w-full bg-red-600 py-3 rounded-2xl font-black text-sm">Logout</button>
           </div>
         </div>
       )}
-
       {showSafety && (
         <div className="absolute inset-0 z-[95] flex items-center justify-center p-6"><div className="bg-[#1E0B36] border border-red-500 rounded-2xl p-5 w-full">
           <h2 className="font-black text-center">🛡️ Safety - @{showSafety}</h2>
@@ -699,22 +777,18 @@ export default function LoomiLive() {
             <button onClick={()=>reportUser(showSafety)} className="flex-1 bg-red-600 py-3 rounded-full font-black text-xs">🚨 Report</button>
           </div>
           <button onClick={()=>setShowSafety(null)} className="w-full text-white/60 text-xs mt-3">Cancel</button>
-          {blockedUsers.length>0 && <div className="mt-3 border-t border-[#3A1B63] pt-2"><p className="text-[11px] text-white/50">Blocked: {blockedUsers.join(", ")}</p><button onClick={()=>{ setBlockedUsers([]); localStorage.setItem("loomi_blocked","[]"); }} className="text-[11px] text-[#FFD700] underline">Unblock all</button></div>}
         </div></div>
       )}
-
       {showNotifs && (
         <div className="absolute inset-0 z-[96] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowNotifs(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 max-h-[60vh] overflow-y-auto">
           <div className="flex justify-between items-center"><h2 className="font-black">🔔 Notifications</h2><button onClick={()=>{ setNotifications([]); setShowNotifs(false); }} className="text-xs text-[#FFD700] underline">Clear all</button></div>
-          {notifications.length===0 ? <p className="text-white/50 text-xs mt-4 text-center">No notifications yet. Follow someone - when they go LIVE you'll get notified here.</p> :
+          {notifications.length===0 ? <p className="text-white/50 text-xs mt-4 text-center">No notifications yet.</p> :
           notifications.map(n=>(
             <div key={n.id} onClick={()=>{ setShowNotifs(false); if(n.user && liveHosts.some((h:any)=>h.nickname===n.user)) watchHost(n.user); }} className="bg-[#241040] border border-[#3A1B63] rounded-xl p-3 mt-2 flex justify-between items-center cursor-pointer"><p className="text-sm">{n.text}</p><span className="text-[#FFD700] text-xs font-black">Watch ›</span></div>
           ))}
-          {following.length>0 && <div className="mt-4"><p className="text-xs font-black text-white/60">Following ({following.length})</p>{following.map(u=><div key={u} className="flex justify-between py-2 text-sm"><span>@{u}</span><button onClick={()=>toggleFollow(u)} className="text-red-400 text-xs">Unfollow</button></div>)}</div>}
           <button onClick={()=>setShowNotifs(false)} className="w-full mt-4 text-white/60 text-xs">Close</button>
         </div></div>
       )}
-
       {showWelcome && (
         <div className="absolute inset-0 z-[110] flex items-center justify-center p-6 bg-black/80"><div className="bg-[#1E0B36] border border-[#FFD700] rounded-3xl p-6 w-full text-center">
           <p className="text-[11px] tracking-[0.3em] text-[#FFD700] font-black">WELCOME TO</p>
@@ -733,7 +807,6 @@ export default function LoomiLive() {
       {!dailyClaimed && !showWelcome && nickname && (
         <button onClick={claimDaily} className="absolute top-[118px] left-1/2 -translate-x-1/2 z-[80] bg-[#FFD700] text-black px-4 py-2 rounded-full text-xs font-black shadow-lg animate-bounce whitespace-nowrap">🎁 Claim Daily +10 🪙</button>
       )}
-
       <div className="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto bg-[#150826] border-t border-[#3A1B63] flex justify-around items-center py-2.5 z-[60]">
         <button onClick={()=>setTab("live")} className={`flex flex-col items-center ${tab==="live"?"text-[#FFD700]":"text-white/50"}`}><span className="text-[20px]">🏠</span><span className="text-[9px] font-bold">LIVE</span></button>
         <button onClick={()=>setTab("feed")} className={`flex flex-col items-center ${tab==="feed"?"text-[#FFD700]":"text-white/50"}`}><span className="text-[20px]">✨</span><span className="text-[9px]">FEED</span></button>
@@ -741,7 +814,6 @@ export default function LoomiLive() {
         <button onClick={()=>setTab("ranking")} className={`flex flex-col items-center ${tab==="ranking"?"text-[#FFD700]":"text-white/50"}`}><span className="text-[20px]">🏆</span><span className="text-[9px]">Rankings</span></button>
         <button onClick={()=>setTab("balance")} className={`flex flex-col items-center ${tab==="balance"?"text-[#FFD700]":"text-white/50"}`}><span className="text-[20px]">👤</span><span className="text-[9px]">Wallet</span></button>
       </div>
-
       <style>{`
         @keyframes heartFloat{0%{transform:translateY(0) scale(0.3);opacity:0}15%{opacity:1}100%{transform:translateY(-80vh);opacity:0}}
         .animate-heart{animation:heartFloat 3s ease-out forwards}
