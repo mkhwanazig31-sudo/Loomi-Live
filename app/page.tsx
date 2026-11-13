@@ -46,7 +46,6 @@ export default function LoomiLive() {
   const [tipEarnings, setTipEarnings] = useState(0);
   const [vipEarnings, setVipEarnings] = useState(0);
   const [giftEarnings, setGiftEarnings] = useState(0);
-  // FLOATING COMMENTS - DETOUR
   const [floaters, setFloaters] = useState<Floater[]>([]);
   const [showFloaters, setShowFloaters] = useState(true);
   
@@ -113,11 +112,10 @@ export default function LoomiLive() {
     return ()=>clearInterval(t);
   }, [vipActive]);
   const currentRoom = useMemo(() => {
-    if (isLive) return nicknameRef.current;
+    if (isLive) return nickname;
     if (watching) return watching;
     return null;
-  }, [isLive, watching]);
-  // RESET FLOATERS + CHAT WHEN ROOM CHANGES / ENDS - STREAM ONLY
+  }, [isLive, watching, nickname]);
   useEffect(() => {
     setChat([]); setFloaters([]); seenChatRef.current.clear();
   }, [currentRoom]);
@@ -132,7 +130,6 @@ export default function LoomiLive() {
           const data = change.doc.data() as any;
           const key = change.doc.id;
           if(data.gift && data.user !== nicknameRef.current){ triggerGift(data.gift); }
-          // FLOATING COMMENT - only if not gift spam, only for this stream
           if(!seenChatRef.current.has(key) && !data.gift){
             seenChatRef.current.add(key);
             addFloater(data.user, data.msg);
@@ -146,7 +143,7 @@ export default function LoomiLive() {
   const addFloater = (user: string, msg: string) => {
     const colors = ["#FFD700","#fff","#FF6B9D","#7CFFB2","#7CC7FF"];
     const id = Math.random().toString(36).slice(2);
-    const top = 12 + Math.random()*45; // 12% - 57% over video
+    const top = 12 + Math.random()*45;
     const duration = 5 + Math.random()*3;
     const color = colors[Math.floor(Math.random()*colors.length)];
     setFloaters(f=>[...f.slice(-8), { id, user, msg, top, duration, color }]);
@@ -186,7 +183,18 @@ export default function LoomiLive() {
     onSnapshot(doc(db, `live_rooms/${hostNick}/viewers/${nicknameRef.current}`), async snap => { const data=snap.data() as any; if(data?.answer && pc.signalingState==="have-local-offer"){ await pc.setRemoteDescription(new RTCSessionDescription(data.answer)); } });
   };
   const stopWatching = async () => { pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear(); if(remoteRef.current) remoteRef.current.srcObject=null; remoteStreamRef.current = new MediaStream(); const w=watching; setWatching(null); try{ if(w) await deleteDoc(doc(db, `live_rooms/${w}/viewers/${nicknameRef.current}`)); }catch{} setChat([]); setFloaters([]); seenChatRef.current.clear(); setVipActive(false); setVipWith(null); };
-  const sendChat = async () => { if(!input.trim() || !currentRoom) return; const t=input.trim(); setInput(""); await addDoc(collection(db,"live_chat"), { room: currentRoom, user:nicknameRef.current, msg:t, createdAt: serverTimestamp() }); };
+  const sendChat = async () => {
+    const t = input.trim();
+    if(!t) return;
+    const room = currentRoom || (isLive ? nickname : watching);
+    if(!room) return alert("Go LIVE or watch someone first to comment");
+    setInput("");
+    try {
+      await addDoc(collection(db,"live_chat"), { room, user: nicknameRef.current || nickname, msg: t, createdAt: serverTimestamp() });
+    } catch(e:any) {
+      alert("Chat failed: " + (e.message || "check Firestore rules"));
+    }
+  };
   const sendGift = async (cost:number, emoji:string) => { if(!currentRoom) return alert("Go live or watch first"); if(keys < cost) { setShowRecharge(true); return; } if(cost>0){ const newKeys = keys - cost; setKeys(newKeys); localStorage.setItem("loomi_keys", newKeys.toString()); } triggerGift(emoji); await addDoc(collection(db,"live_chat"), { room: currentRoom, user:nicknameRef.current, msg:`sent ${emoji}`, gift:emoji, cost, createdAt: serverTimestamp() }); };
   const createPost = async () => {
     if(!postCaption.trim() && !postMedia.trim()) return alert("Add caption or media");
@@ -276,7 +284,6 @@ export default function LoomiLive() {
         <div className="relative flex-1 aspect-[9/14] overflow-hidden">
           <video ref={videoRef} autoPlay muted playsInline className={`w-full h-full object-cover ${isLive ? "block" : "hidden"}`} />
           <video ref={remoteRef} autoPlay playsInline className={`w-full h-full object-cover bg-black ${watching ? "block" : "hidden"}`} />
-          {/* FLOATING COMMENTS - fly across video, stream-only */}
           {showFloaters && (isLive || watching) && (
             <div className="absolute inset-0 pointer-events-none overflow-hidden z-[15]">
               {floaters.map(f=>(
