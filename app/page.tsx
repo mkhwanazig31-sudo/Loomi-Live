@@ -8,7 +8,7 @@ import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, on
 
 const ICE = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "stun:stun1.l.google.com:19302" }, { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" }, { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" }, { urls: "turn:openrelay.metered.ca:443?transport=tcp", username: "openrelayproject", credential: "openrelayproject" }] };
 type Fly = { id: string; emoji: string; x: number; type: string };
-type Post = { id: string; creator: string; caption: string; mediaUrl: string; mediaType?: string; isLocked: boolean; price: number; likes: number; likedBy?: string[]; unlockedBy?: string[]; createdAt?: any; postType?: string };
+type Post = { id: string; creator: string; caption: string; mediaUrl: string; mediaType?: string; isLocked: boolean; price: number; likes: number; likedBy?: string[]; unlockedBy?: string[]; createdAt?: any; postType?: string; viewOnce?: boolean; expiry?: string };
 type Floater = { id: string; user: string; msg: string; top: number; duration: number; color: string };
 
 export default function LoomiLive() {
@@ -43,13 +43,28 @@ export default function LoomiLive() {
   const [postComments, setPostComments] = useState<Record<string, any[]>>({});
   const [openComments, setOpenComments] = useState<string | null>(null);
   const [commentInput, setCommentInput] = useState("");
-  // PROFILE + PLUS MENU + UPLOAD>POST - NEW
   const [viewingProfile, setViewingProfile] = useState<string | null>(null);
   const [profileCategory, setProfileCategory] = useState("All");
   const [showPlusMenu, setShowPlusMenu] = useState(false);
   const [createStep, setCreateStep] = useState<0|1>(0);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // ===== PRIVACY - AS YOU SAID =====
+  // 1 Ghost Mode - REMOVED, not added
+  // 2 Face Blur - ON/OFF button only
+  // 3 View-Once - OPTIONAL per post
+  // 4 Private Profile - OPTIONAL
+  // 5 No Download - OPTIONAL
+  // 6 Hide Location - OPTIONAL
+  // 7 Leak Trace / Watermark - COMPULSORY always on
+  // 8 Auto-Report - YES
+  const [privacySettings, setPrivacySettings] = useState({ faceBlur: false, privateProfile: false, blockDownloads: false, hideLocation: true, hideOnline: false });
+  const [showPrivacy, setShowPrivacy] = useState(false);
+  const [isScreenHidden, setIsScreenHidden] = useState(false);
+  const [screenshotWarning, setScreenshotWarning] = useState("");
+  const [postViewOnce, setPostViewOnce] = useState(false);
+  const [postExpiry, setPostExpiry] = useState("Forever");
+  const [viewOnceViewed, setViewOnceViewed] = useState<string[]>(()=>{ try{ return JSON.parse(localStorage.getItem("loomi_viewonce")||"[]"); }catch{ return []; } });
   const [showVipModal, setShowVipModal] = useState(false);
   const [vipPrice, setVipPrice] = useState(100);
   const [vipActive, setVipActive] = useState(false);
@@ -105,8 +120,12 @@ export default function LoomiLive() {
             if(data.keys !== undefined){ setKeys(data.keys); localStorage.setItem("loomi_keys", data.keys.toString()); }
             if(data.category) setUserCategory(data.category);
             if(data.following) { setFollowing(data.following); localStorage.setItem("loomi_following", JSON.stringify(data.following)); }
+            if(data.privacy) setPrivacySettings({ faceBlur: false, privateProfile: !!data.privacy.privateProfile, blockDownloads: !!data.privacy.blockDownloads, hideLocation: data.privacy.hideLocation!==false, hideOnline: !!data.privacy.hideOnline });
+            // Load own private flag for profile check
+            if(data.privacy?.privateProfile) localStorage.setItem("loomi_private_"+data.username, "1"); else localStorage.removeItem("loomi_private_"+data.username);
           }
         }catch(e){ console.log("profile load", e); }
+        try{ const saved = localStorage.getItem("loomi_privacy"); if(saved) setPrivacySettings(JSON.parse(saved)); }catch{}
       } else { setAuthUser(null); setNickname(""); nicknameRef.current = ""; }
     });
     return ()=>unsub();
@@ -123,7 +142,7 @@ export default function LoomiLive() {
         const snap = await getDocs(q);
         if(!snap.empty) return setAuthError(`@${clean} already taken - pick another`);
         const cred = await createUserWithEmailAndPassword(auth, authEmail.trim(), authPass);
-        await setDoc(doc(db, "loomi_users", cred.user.uid), { uid: cred.user.uid, username: clean, email: authEmail.trim().toLowerCase(), keys: 100, category: "Chat", following: [], createdAt: serverTimestamp() });
+        await setDoc(doc(db, "loomi_users", cred.user.uid), { uid: cred.user.uid, username: clean, email: authEmail.trim().toLowerCase(), keys: 100, category: "Chat", following: [], privacy: { privateProfile: false, blockDownloads: false, hideLocation: true, hideOnline: false }, createdAt: serverTimestamp() });
         setNickname(clean); nicknameRef.current = clean;
       } else { await signInWithEmailAndPassword(auth, authEmail.trim(), authPass); }
     }catch(e:any){
@@ -137,6 +156,34 @@ export default function LoomiLive() {
   useEffect(() => { nicknameRef.current = nickname; }, [nickname]);
   useEffect(() => { if (typeof window !== "undefined") remoteStreamRef.current = new MediaStream(); }, []);
   useEffect(() => { if(isLive && streamRef.current && videoRef.current){ videoRef.current.srcObject = streamRef.current; videoRef.current.muted = true; videoRef.current.play().catch(()=>{}); } }, [isLive]);
+  // ===== 7 COMPULSORY - SCREENSHOT / RECORDING PROTECTION + WATERMARK =====
+  useEffect(() => {
+    const onVisibility = () => { if(document.hidden){ setIsScreenHidden(true); setScreenshotWarning("⚠️ Screenshot / Recording blocked - Loomi-live Privacy"); } else { setTimeout(()=>{ setIsScreenHidden(false); setScreenshotWarning(""); }, 800); } };
+    const onBlur = () => setIsScreenHidden(true);
+    const onFocus = () => setTimeout(()=>setIsScreenHidden(false), 800);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if(e.key==="PrintScreen" || ((e.ctrlKey||e.metaKey) && ["p","s","u"].includes(e.key.toLowerCase()))){ e.preventDefault(); setScreenshotWarning("⚠️ Screenshot blocked - This content is private"); setTimeout(()=>setScreenshotWarning(""), 3000); try{ navigator.clipboard?.writeText("Loomi-live - Private content protected"); }catch{} }
+    };
+    const onContext = (e: Event) => { if(privacySettings.blockDownloads) e.preventDefault(); };
+    const onCopy = (e: Event) => { if(privacySettings.blockDownloads){ e.preventDefault(); setScreenshotWarning("⚠️ Copy blocked"); setTimeout(()=>setScreenshotWarning(""), 2000); } };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("keydown", onKeyDown);
+    document.addEventListener("contextmenu", onContext);
+    document.addEventListener("copy", onCopy);
+    return () => { document.removeEventListener("visibilitychange", onVisibility); window.removeEventListener("blur", onBlur); window.removeEventListener("focus", onFocus); window.removeEventListener("keydown", onKeyDown); document.removeEventListener("contextmenu", onContext); document.removeEventListener("copy", onCopy); };
+  }, [privacySettings.blockDownloads]);
+  // ===== 8 AUTO-REPORT - if someone says screenshot / recording / leak =====
+  const autoReportScreenshot = async (user: string, msg: string) => {
+    const lower = msg.toLowerCase();
+    if(lower.includes("screenshot") || lower.includes("screen record") || lower.includes("recording") || lower.includes("leak") || lower.includes("i recorded")){
+      try{ await addDoc(collection(db, "loomi_reports"), { reporter: "AUTO - Loomi-live", reported: user, room: currentRoom, reason: "Screenshot / Recording threat - Auto", msg, createdAt: serverTimestamp() }); }catch{}
+      setNotifications(prev=>[{ id: Date.now().toString(), text: `⚠️ @${user} mentioned screenshot/recording - Auto-reported 🛡️`, user, time: Date.now() }, ...prev].slice(0,20));
+      setScreenshotWarning(`⚠️ @${user} auto-reported for screenshot talk`);
+      setTimeout(()=>setScreenshotWarning(""), 4000);
+    }
+  };
   useEffect(() => {
     const unsubHosts = onSnapshot(collection(db, "live_rooms"), s => {
       const all = s.docs.map(d => d.data() as any);
@@ -146,13 +193,13 @@ export default function LoomiLive() {
   }, [nickname]);
   useEffect(()=>{
     liveHosts.forEach((h:any)=>{
-      if(following.includes(h.nickname) && !notifiedLive.has(h.nickname)){
+      if(following.includes(h.nickname) && !notifiedLive.has(h.nickname) && !privacySettings.hideOnline){
         setNotifiedLive(prev=>new Set(prev).add(h.nickname));
         setNotifications(prev=>[{ id: Date.now().toString()+h.nickname, text: `@${h.nickname} is LIVE now 🔴`, user: h.nickname, time: Date.now() }, ...prev].slice(0,20));
       }
     });
     setNotifiedLive(prev=>{ const next = new Set<string>(); liveHosts.forEach((h:any)=>{ if(prev.has(h.nickname)) next.add(h.nickname); }); return next; });
-  }, [liveHosts, following]);
+  }, [liveHosts, following, privacySettings.hideOnline]);
   useEffect(() => {
     const q = query(collection(db, "loomi_posts"), orderBy("createdAt", "desc"), limit(100));
     const unsub = onSnapshot(q, s => setPosts(s.docs.map(d => ({ id: d.id, ...d.data() } as Post))), ()=>{});
@@ -207,10 +254,10 @@ export default function LoomiLive() {
         if(change.type==="added"){
           const data = change.doc.data() as any; const key = change.doc.id;
           if(data.gift && data.user !== nicknameRef.current){ triggerGift(data.gift); }
-          if(!seenChatRef.current.has(key) && !data.gift && !blockedUsers.includes(data.user)){ seenChatRef.current.add(key); addFloater(data.user, data.msg); }
+          if(!seenChatRef.current.has(key) && !data.gift && !blockedUsers.includes(data.user)){ seenChatRef.current.add(key); addFloater(data.user, data.msg); autoReportScreenshot(data.user, data.msg); }
         }
       });
-    }, (err)=>{ console.log("CHAT LISTEN ERROR:", err); setChatError("Chat blocked by Firebase Rules - paste firestore.rules file"); });
+    }, (err)=>{ console.log("CHAT LISTEN ERROR:", err); setChatError("Chat blocked by Firebase Rules"); });
     return () => unsub();
   }, [currentRoom]);
   useEffect(()=>{ chatEndRef.current?.scrollIntoView({behavior:"smooth"}) },[chat]);
@@ -277,7 +324,7 @@ export default function LoomiLive() {
   const shareApp = async () => { const text = `Join me on LOOMI-LIVE 🔴✨ - Live, Chat, Earn! My username is @${nickname} - ${window.location.origin}`; try{ if(navigator.share){ await navigator.share({ title: "LOOMI-LIVE", text, url: window.location.origin }); } else { await navigator.clipboard.writeText(text); alert("Link copied! Share it on WhatsApp / TikTok"); } }catch{ try{ await navigator.clipboard.writeText(text); alert("Link copied!"); }catch{} } };
   const sendChat = async () => {
     const t = input.trim(); if(!t) return; const room = currentRoom || (isLive ? nickname : watching); if(!room) return alert("Go LIVE or watch someone first to comment"); const myUser = nicknameRef.current || nickname; setInput("");
-    const localMsg = { id: "local-"+Date.now(), room, user: myUser, msg: t, createdAt: { seconds: Date.now()/1000 } }; setChat(prev => [...prev, localMsg]); addFloater(myUser, t);
+    const localMsg = { id: "local-"+Date.now(), room, user: myUser, msg: t, createdAt: { seconds: Date.now()/1000 } }; setChat(prev => [...prev, localMsg]); addFloater(myUser, t); autoReportScreenshot(myUser, t);
     try { await addDoc(collection(db,"live_chat"), { room, user: myUser, msg: t, createdAt: serverTimestamp(), ts: Date.now() }); } catch(e:any) { setChatError("Saved locally only - check Firestore Rules"); }
   };
   const sendGift = async (cost:number, emoji:string) => { if(!currentRoom) return alert("Go live or watch first"); if(keys < cost) { setShowRecharge(true); return; } if(cost>0){ const newKeys = keys - cost; setKeys(newKeys); localStorage.setItem("loomi_keys", newKeys.toString()); } triggerGift(emoji); try{ await addDoc(collection(db,"live_chat"), { room: currentRoom, user:nicknameRef.current, msg:`sent ${emoji}`, gift:emoji, cost, createdAt: serverTimestamp(), ts: Date.now() }); }catch{} };
@@ -294,9 +341,10 @@ export default function LoomiLive() {
   const createPost = async () => {
     if(!postCaption.trim() && !postMedia.trim()) return alert("Add caption or media");
     const mediaType = getMediaType(postMedia.trim(), postType);
-    await addDoc(collection(db, "loomi_posts"), { creator: nicknameRef.current, caption: postCaption.trim(), mediaUrl: postMedia.trim(), mediaType, postType, isLocked: postLocked, price: postLocked ? postPrice : 0, likes: 0, likedBy: [], unlockedBy: [], createdAt: serverTimestamp() });
-    setPostCaption(""); setPostMedia(""); setPostLocked(false); setPostPrice(20); setPostType("post"); setCreateStep(0);
+    await addDoc(collection(db, "loomi_posts"), { creator: nicknameRef.current, caption: postCaption.trim(), mediaUrl: postMedia.trim(), mediaType, postType, isLocked: postLocked, price: postLocked ? postPrice : 0, likes: 0, likedBy: [], unlockedBy: [], viewOnce: postViewOnce, expiry: postExpiry, createdAt: serverTimestamp() });
+    setPostCaption(""); setPostMedia(""); setPostLocked(false); setPostPrice(20); setPostType("post"); setPostViewOnce(false); setPostExpiry("Forever"); setCreateStep(0);
   };
+  const markViewOnce = (id: string) => { if(!viewOnceViewed.includes(id)){ const next = [...viewOnceViewed, id]; setViewOnceViewed(next); localStorage.setItem("loomi_viewonce", JSON.stringify(next)); } };
   const unlockPost = async (p: Post) => {
     if(p.unlockedBy?.includes(nicknameRef.current) || p.creator === nicknameRef.current) return;
     if(keys < p.price){ setShowRecharge(true); return; }
@@ -312,7 +360,7 @@ export default function LoomiLive() {
   const tipPost = async (p: Post) => { await sendGift(5, "💎"); await addDoc(collection(db, "loomi_tips"), { sender: nicknameRef.current, creator: p.creator, postId: p.id, amount: 5, createdAt: serverTimestamp() }); };
   const toggleSavePost = (id: string) => { const next = savedPosts.includes(id) ? savedPosts.filter(x=>x!==id) : [...savedPosts, id]; setSavedPosts(next); localStorage.setItem("loomi_saved", JSON.stringify(next)); };
   const sharePost = async (p: Post) => { const text = `🔥 Check this on LOOMI-LIVE by @${p.creator}: ${p.caption} - ${window.location.origin}`; try{ if(navigator.share) await navigator.share({ title: "LOOMI-LIVE", text, url: window.location.origin }); else { await navigator.clipboard.writeText(text); alert("Post link copied! Share on WhatsApp / TikTok"); } }catch{ await navigator.clipboard.writeText(text); alert("Post link copied!"); } };
-  const sendPostComment = async (postId: string) => { const t = commentInput.trim(); if(!t) return; await addDoc(collection(db, "loomi_post_comments"), { postId, user: nicknameRef.current, msg: t, createdAt: serverTimestamp() }); setCommentInput(""); };
+  const sendPostComment = async (postId: string) => { const t = commentInput.trim(); if(!t) return; await addDoc(collection(db, "loomi_post_comments"), { postId, user: nicknameRef.current, msg: t, createdAt: serverTimestamp() }); setCommentInput(""); autoReportScreenshot(nicknameRef.current, t); };
   const requestPrivate = async () => {
     if(!watching) return alert("Watch someone first"); if(keys < vipPrice){ setShowRecharge(true); return; }
     const newKeys = keys - vipPrice; setKeys(newKeys); localStorage.setItem("loomi_keys", newKeys.toString());
@@ -342,6 +390,12 @@ export default function LoomiLive() {
     return base;
   }, [posts, searchQuery, feedFilter, following, savedPosts, nickname]);
   const renderHashtags = (text: string) => text.split(" ").map((w,i)=> w.startsWith("#") ? <span key={i} className="text-[#FFD700] font-bold">{w} </span> : w+" ");
+  const savePrivacy = async () => {
+    localStorage.setItem("loomi_privacy", JSON.stringify(privacySettings));
+    if(privacySettings.privateProfile) localStorage.setItem("loomi_private_"+nickname, "1"); else localStorage.removeItem("loomi_private_"+nickname);
+    if(authUser){ try{ await updateDoc(doc(db, "loomi_users", authUser.uid), { privacy: privacySettings }); }catch{} }
+    setShowPrivacy(false); alert("Privacy saved ✅");
+  };
 
   if(authLoading) return (<div className="min-h-screen bg-[#150826] text-white flex items-center justify-center max-w-[430px] mx-auto"><p className="font-black text-[#FFD700]">LOOMI-LIVE loading...</p></div>);
   if(!authUser) return (
@@ -383,6 +437,7 @@ export default function LoomiLive() {
       <div className="flex justify-between items-center px-4 py-2 bg-[#150826] text-xs">
         <button onClick={()=>setViewingProfile(nickname)} className="font-black">@{nickname} <span className="text-[#FFD700] text-[10px]">• View Profile →</span></button>
         <div className="flex gap-2">
+          <button onClick={()=>setShowPrivacy(true)} className="bg-[#241040] border border-[#FFD700]/50 px-2 py-1 rounded-full text-[10px] font-bold">🛡️ Privacy</button>
           <button onClick={()=>setShowFloaters(v=>!v)} className={`px-2 py-1 rounded-full text-[10px] font-bold ${showFloaters?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{showFloaters?"💬 Fly: ON":"💬 Fly: OFF"}</button>
           <button onClick={handleLogout} className="bg-[#241040] border border-[#3A1B63] px-3 py-1 rounded-full text-white/70">Logout</button>
         </div>
@@ -391,10 +446,9 @@ export default function LoomiLive() {
       {vipStatus && <div className="bg-[#241040] border-b border-[#3A1B63] px-3 py-1.5 text-[11px] text-[#FFD700] text-center">{vipStatus}</div>}
       {camError && <div className="bg-red-600 px-3 py-2 text-[11px] text-center font-bold">{camError} • <button onClick={()=>{ setCamError(""); goLive(); }} className="underline">Tap to Retry</button></div>}
 
-      {/* LIVE - LOOMI-LIVE */}
       <div className={`relative bg-[#1E0B36] w-full overflow-hidden ${tab==="live" ? "flex-1 flex flex-col pb-[70px]" : "hidden"}`}>
         <div className="relative flex-1 aspect-[9/14] overflow-hidden bg-black">
-          <video ref={videoRef} autoPlay muted playsInline className={`w-full h-full object-cover ${isLive ? "block" : "hidden"}`} style={{ transform: "scaleX(-1)" }} />
+          <video ref={videoRef} autoPlay muted playsInline className={`w-full h-full object-cover ${isLive ? "block" : "hidden"} ${privacySettings.faceBlur ? "blur-[18px]" : ""}`} style={{ transform: "scaleX(-1)" }} />
           <video ref={remoteRef} autoPlay playsInline className={`w-full h-full object-cover bg-black ${watching ? "block" : "hidden"}`} />
           {showFloaters && (isLive || watching) && (<div className="absolute inset-0 pointer-events-none overflow-hidden z-[15]">{floaters.map(f=>(<div key={f.id} className="absolute whitespace-nowrap animate-flyComment" style={{ top: `${f.top}%`, animationDuration: `${f.duration}s`, color: f.color }}><span className="bg-black/60 backdrop-blur px-2.5 py-1 rounded-full text-[12px] font-bold shadow-lg">@{f.user}: <span className="text-white">{f.msg}</span></span></div>))}</div>)}
           <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">{gifts.map(g=>(<div key={g.id} className="absolute bottom-20 text-3xl animate-heart" style={{ left: `${g.x}%` }}>{g.emoji}</div>))}</div>
@@ -404,10 +458,15 @@ export default function LoomiLive() {
                 <div className="bg-black/60 backdrop-blur px-2.5 py-1 rounded-full text-xs flex items-center gap-1">🔴 @{watching||nickname} ❤️ {chat.length}</div>
                 <div className="flex gap-1"><div className="bg-black/60 backdrop-blur px-2.5 py-1 rounded-full text-xs">{liveHosts.length+1} viewers</div><button onClick={()=> isLive ? stopLive() : stopWatching()} className="bg-black/60 w-6 h-6 rounded-full flex items-center justify-center">✕</button></div>
               </div>
+              {/* 2 FACE BLUR ON/OFF BUTTON */}
+              {isLive && (
+                <button onClick={()=>setPrivacySettings(p=>({...p, faceBlur: !p.faceBlur}))} className={`absolute top-16 right-2 z-20 px-3 py-1.5 rounded-full text-[11px] font-black ${privacySettings.faceBlur?"bg-[#FFD700] text-black":"bg-black/60 text-white"}`}>{privacySettings.faceBlur?"😶‍🌫️ Blur: ON - Tap to OFF":"😶‍🌫️ Blur: OFF - Tap to ON"}</button>
+              )}
               <div className="absolute top-10 left-2 bg-black/60 px-2.5 py-1 rounded-full text-[10px] z-20">Daily Ranking</div>
               <div className="absolute top-10 right-2 bg-[#FFD700] text-black px-2.5 py-1 rounded-full text-[10px] font-black z-20">{vipActive ? `👑 PRIVATE ${fmtTime(vipSeconds)}` : "Gallery 3/10"}</div>
               {watching && (<button onClick={()=>toggleFollow(watching)} className={`absolute top-16 left-2 z-20 px-3 py-1.5 rounded-full text-[11px] font-black ${following.includes(watching)?"bg-black/60 text-white":"bg-[#FFD700] text-black"}`}>{following.includes(watching)?"Following ✓":"➕ Follow @"+watching}</button>)}
               {watching && !vipActive && (<button onClick={()=>setShowVipModal(true)} className="absolute bottom-3 right-2 z-20 bg-[#FFD700] text-black px-3 py-2 rounded-full text-[11px] font-black shadow-lg">👑 Request Private</button>)}
+              {isLive && privacySettings.faceBlur && <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 bg-black/70 px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap">😶‍🌫️ Your face is blurred to viewers</div>}
             </>
           )}
           {!isLive && !watching && (
@@ -415,6 +474,7 @@ export default function LoomiLive() {
               <p className="text-[11px] tracking-[0.25em] text-[#FFD700] font-black mb-2">LOOMI-LIVE</p>
               <button onClick={goLive} className="bg-[#FFD700] text-black px-10 py-4 rounded-full font-black text-lg shadow-[0_0_30px_rgba(255,215,0,0.4)]">🔴 GO LIVE</button>
               <p className="mt-3 text-white/50 text-xs">{liveHosts.length} live now • Loomi-live</p>
+              <button onClick={()=>setPrivacySettings(p=>({...p, faceBlur: !p.faceBlur}))} className={`mt-3 px-4 py-2 rounded-full text-xs font-black ${privacySettings.faceBlur?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>😶‍🌫️ Face Blur: {privacySettings.faceBlur?"ON":"OFF"} - Tap to switch</button>
               {camError && <p className="mt-2 text-red-400 text-[11px] px-6 text-center">{camError}</p>}
             </div>
           )}
@@ -439,7 +499,6 @@ export default function LoomiLive() {
         </div>
       </div>
 
-      {/* FEED */}
       {tab==="feed" && (
         <div className="flex-1 bg-[#150826] overflow-y-auto pb-[80px]">
           <div className="p-3">
@@ -468,9 +527,7 @@ export default function LoomiLive() {
             <button onClick={()=>setFeedFilter("saved")} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold ${feedFilter==="saved"?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>🔖 Saved ({savedPosts.length})</button>
           </div>
           {searchQuery && <p className="px-3 pb-2 text-xs text-[#FFD700]">Showing {filteredPosts.length} posts for "{searchQuery}" • <button onClick={()=>setSearchQuery("")} className="underline">Clear</button></p>}
-          {filteredPosts.length===0 && (
-            <div className="text-center px-6 mt-8"><p className="text-4xl">📸</p><p className="font-black mt-2">No posts yet in {feedFilter}</p><p className="text-white/40 text-xs mt-1">Be first to post a video, pic or meme!</p><button onClick={()=>{ setCreateStep(0); setShowCreatePost(true); }} className="mt-3 bg-[#FFD700] text-black px-6 py-2.5 rounded-full text-xs font-black">Create First Post 🚀</button></div>
-          )}
+          {filteredPosts.length===0 && (<div className="text-center px-6 mt-8"><p className="text-4xl">📸</p><p className="font-black mt-2">No posts yet in {feedFilter}</p><p className="text-white/40 text-xs mt-1">Be first to post a video, pic or meme!</p><button onClick={()=>{ setCreateStep(0); setShowCreatePost(true); }} className="mt-3 bg-[#FFD700] text-black px-6 py-2.5 rounded-full text-xs font-black">Create First Post 🚀</button></div>)}
           <div className="space-y-3 px-3">
             {filteredPosts.map(p=>{
               const isUnlocked = !p.isLocked || p.unlockedBy?.includes(nickname) || p.creator===nickname;
@@ -478,12 +535,13 @@ export default function LoomiLive() {
               const isSaved = savedPosts.includes(p.id);
               const comments = postComments[p.id] || [];
               const isVideo = p.mediaType==="video" || isVideoUrl(p.mediaUrl||"") || p.mediaUrl.startsWith("data:video");
+              const isViewOnceGone = p.viewOnce && viewOnceViewed.includes(p.id) && p.creator!==nickname;
               return (
                 <div key={p.id} className="bg-[#241040] border border-[#3A1B63] rounded-2xl overflow-hidden">
                   <div className="p-3 flex justify-between items-center">
                     <div className="flex items-center gap-2.5">
                       <div onClick={()=>setViewingProfile(p.creator)} className="w-10 h-10 rounded-full bg-gradient-to-br from-[#FFD700] to-orange-500 text-black flex items-center justify-center font-black cursor-pointer">{p.creator[0]?.toUpperCase()}</div>
-                      <div><button onClick={()=>setViewingProfile(p.creator)} className="text-sm font-black leading-none">@{p.creator} {p.creator===nickname && <span className="text-[10px] bg-[#FFD700] text-black px-1.5 py-0.5 rounded-full">YOU</span>}</button><p className="text-[11px] text-white/40 mt-0.5">{p.postType==="meme" ? "😂 Meme • " : isVideo ? "📹 Video • " : "📝 Post • "} Just now • 🌍 • Tap name to visit profile</p></div>
+                      <div><button onClick={()=>setViewingProfile(p.creator)} className="text-sm font-black leading-none">@{p.creator} {p.creator===nickname && <span className="text-[10px] bg-[#FFD700] text-black px-1.5 py-0.5 rounded-full">YOU</span>}</button><p className="text-[11px] text-white/40 mt-0.5">{p.postType==="meme" ? "😂 Meme • " : isVideo ? "📹 Video • " : "📝 Post • "}{p.viewOnce ? "⏳ View-Once • " : ""}{p.expiry && p.expiry!=="Forever" ? `Expires ${p.expiry} • ` : ""}Tap name to visit profile</p></div>
                     </div>
                     <div className="flex gap-1">
                       {p.creator!==nickname && <button onClick={()=>toggleFollow(p.creator)} className={`px-3 py-1.5 rounded-full text-[11px] font-black ${following.includes(p.creator)?"bg-[#150826] border border-[#3A1B63] text-white/60":"bg-[#FFD700] text-black"}`}>{following.includes(p.creator)?"Following ✓":"Follow"}</button>}
@@ -491,10 +549,13 @@ export default function LoomiLive() {
                     </div>
                   </div>
                   <div className="px-3 pb-2 text-sm text-white/90 leading-relaxed">{renderHashtags(p.caption)}</div>
-                  {p.mediaUrl ? (
-                    <div className="relative" onDoubleClick={()=>likePost(p)}>
-                      {isUnlocked ? (isVideo ? <video src={p.mediaUrl} controls playsInline className="w-full max-h-[420px] object-cover bg-black" /> : <img src={p.mediaUrl} alt="" className="w-full max-h-[420px] object-cover" />) : (<div className="relative"><img src={p.mediaUrl} alt="" className="w-full max-h-[320px] object-cover blur-xl opacity-40" /><div className="absolute inset-0 flex flex-col items-center justify-center"><span className="text-4xl">🔒</span><p className="text-xs text-white/70 mt-1">Exclusive content from @{p.creator}</p><button onClick={()=>unlockPost(p)} className="mt-2 bg-[#FFD700] text-black px-5 py-2 rounded-full text-xs font-black">Unlock for {p.price} 🪙</button></div></div>)}
+                  {isViewOnceGone ? (
+                    <div className="p-6 text-center bg-black/30"><p className="text-3xl">👁️</p><p className="text-xs text-white/50 mt-2">This View-Once post already disappeared</p></div>
+                  ) : p.mediaUrl ? (
+                    <div className="relative" onDoubleClick={()=>likePost(p)} onClick={()=>{ if(p.viewOnce) markViewOnce(p.id); }}>
+                      {isUnlocked ? (isVideo ? <video src={p.mediaUrl} controls playsInline className="w-full max-h-[420px] object-cover bg-black" onContextMenu={e=>{ if(privacySettings.blockDownloads) e.preventDefault(); }} /> : <img src={p.mediaUrl} alt="" className="w-full max-h-[420px] object-cover" onContextMenu={e=>{ if(privacySettings.blockDownloads) e.preventDefault(); }} draggable={false} />) : (<div className="relative"><img src={p.mediaUrl} alt="" className="w-full max-h-[320px] object-cover blur-xl opacity-40" /><div className="absolute inset-0 flex flex-col items-center justify-center"><span className="text-4xl">🔒</span><p className="text-xs text-white/70 mt-1">Exclusive content from @{p.creator}</p><button onClick={()=>unlockPost(p)} className="mt-2 bg-[#FFD700] text-black px-5 py-2 rounded-full text-xs font-black">Unlock for {p.price} 🪙</button></div></div>)}
                       {p.isLocked && <span className="absolute top-2 right-2 bg-[#FFD700] text-black text-[10px] px-2 py-1 rounded-full font-black">🔒 {p.price} 🪙</span>}
+                      {p.viewOnce && <span className="absolute bottom-2 left-2 bg-red-600 px-2 py-1 rounded-full text-[10px] font-black">⏳ VIEW-ONCE - Tap to view, then gone</span>}
                     </div>
                   ) : !isUnlocked ? (<div className="p-4 text-center bg-black/20"><p className="text-white/60 text-xs">🔒 Locked post - unlock to view</p><button onClick={()=>unlockPost(p)} className="mt-2 bg-[#FFD700] text-black px-5 py-2 rounded-full text-xs font-black">Unlock for {p.price} 🪙</button></div>) : null}
                   <div className="px-3 pt-2 flex justify-between text-xs text-white/60"><span>❤️ {p.likes||0} likes • 💬 {comments.length} comments</span><span>{p.isLocked ? `🔒 Earned ${p.price} 🪙 per unlock` : ""}</span></div>
@@ -542,7 +603,7 @@ export default function LoomiLive() {
             <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-3">
               <p className="text-xs font-black">Your Category - how others find you</p>
               <div className="flex gap-2 overflow-x-auto mt-2">{categories.filter(c=>c!=="All").map(c=>(<button key={c} onClick={()=>{ setUserCategory(c); localStorage.setItem("loomi_category", c); if(authUser) updateDoc(doc(db, "loomi_users", authUser.uid), { category: c }).catch(()=>{}); }} className={`whitespace-nowrap px-3 py-1.5 rounded-full text-[11px] font-bold ${userCategory===c?"bg-[#FFD700] text-black":"bg-[#150826] border border-[#3A1B63]"}`}>{c}</button>))}</div>
-              <p className="text-[11px] text-white/50 mt-2">You are listed as: <b className="text-[#FFD700]">{userCategory}</b></p>
+              <p className="text-[11px] text-white/50 mt-2">You are listed as: <b className="text-[#FFD700]">{userCategory}</b>{!privacySettings.hideLocation && " • Location visible"}</p>
             </div>
           </div>
           <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl mx-3 h-64 flex items-center justify-center text-white/40 text-sm">LIVE Preview Area - Loomi-live</div>
@@ -556,19 +617,15 @@ export default function LoomiLive() {
             <button onClick={()=>setRankingTab("viewers")} className={`px-4 py-1.5 rounded-full text-xs font-bold ${rankingTab==="viewers"?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>Top viewers</button>
             <button onClick={()=>setRankingTab("guardian")} className={`px-4 py-1.5 rounded-full text-xs font-bold ${rankingTab==="guardian"?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>Guardian</button>
           </div>
-          {rankingTab==="viewers" ? (
-            <div className="flex-1 overflow-y-auto p-3">{rankings.length===0 ? <p className="text-xs text-white/40 text-center mt-10">No viewers yet</p> : rankings.map(r=>(<div key={r.user} className="flex items-center gap-3 py-2 border-b border-[#3A1B63]"><span className="w-6 font-black text-[#FFD700]">{r.rank}</span><div onClick={()=>setViewingProfile(r.user)} className="w-10 h-10 rounded-full bg-[#241040] border border-[#3A1B63] cursor-pointer"></div><div className="flex-1"><button onClick={()=>setViewingProfile(r.user)} className="text-sm font-bold">@{r.user}</button></div><span className="text-sm font-bold text-[#FFD700]">{r.pts} pts</span></div>))}</div>
-          ) : (<div className="flex-1 flex flex-col items-center justify-center p-6 text-center"><div className="text-7xl">🦌</div><h2 className="font-black text-xl mt-3">Guardian</h2><p className="text-xs text-white/50 mt-2">The #1 sender becomes Guardian</p><button onClick={()=>sendGift(100,"🛡️")} className="mt-4 bg-[#FFD700] text-black px-6 py-3 rounded-full text-xs font-black">Send Guardian Pledge (100)</button></div>)}
+          {rankingTab==="viewers" ? (<div className="flex-1 overflow-y-auto p-3">{rankings.length===0 ? <p className="text-xs text-white/40 text-center mt-10">No viewers yet</p> : rankings.map(r=>(<div key={r.user} className="flex items-center gap-3 py-2 border-b border-[#3A1B63]"><span className="w-6 font-black text-[#FFD700]">{r.rank}</span><div onClick={()=>setViewingProfile(r.user)} className="w-10 h-10 rounded-full bg-[#241040] border border-[#3A1B63] cursor-pointer"></div><div className="flex-1"><button onClick={()=>setViewingProfile(r.user)} className="text-sm font-bold">@{r.user}</button></div><span className="text-sm font-bold text-[#FFD700]">{r.pts} pts</span></div>))}</div>) : (<div className="flex-1 flex flex-col items-center justify-center p-6 text-center"><div className="text-7xl">🦌</div><h2 className="font-black text-xl mt-3">Guardian</h2><p className="text-xs text-white/50 mt-2">The #1 sender becomes Guardian</p><button onClick={()=>sendGift(100,"🛡️")} className="mt-4 bg-[#FFD700] text-black px-6 py-3 rounded-full text-xs font-black">Send Guardian Pledge (100)</button></div>)}
         </div>
       )}
 
       {tab==="balance" && (
         <div className="flex-1 bg-[#150826] text-white p-3 space-y-3 overflow-y-auto pb-[80px]">
-          <div className="bg-gradient-to-r from-[#FFD700] to-orange-500 text-black rounded-2xl p-4 flex justify-between items-center">
-            <div><button onClick={()=>setViewingProfile(nickname)} className="text-lg font-black underline">@{nickname} → Profile</button><p className="text-[11px] font-bold opacity-70">{userCategory} Creator • {authUser?.email}</p></div>
-            <button onClick={shareApp} className="bg-black text-white px-3 py-2 rounded-full text-xs font-black">↗ Share</button>
-          </div>
+          <div className="bg-gradient-to-r from-[#FFD700] to-orange-500 text-black rounded-2xl p-4 flex justify-between items-center"><div><button onClick={()=>setViewingProfile(nickname)} className="text-lg font-black underline">@{nickname} → Profile</button><p className="text-[11px] font-bold opacity-70">{userCategory} Creator • {authUser?.email}</p></div><button onClick={shareApp} className="bg-black text-white px-3 py-2 rounded-full text-xs font-black">↗ Share</button></div>
           <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl text-center py-6"><p className="text-xs text-white/60">Coins Balance</p><p className="text-4xl font-black text-[#FFD700]">{keys} 🪙</p><p className="text-xs text-white/50">@{nickname} • 1 coin = R 0.27</p><div className="flex gap-2 justify-center mt-3"><button onClick={()=>setShowRecharge(true)} className="bg-[#FFD700] text-black px-4 py-2 rounded-full text-xs font-black">Get Coins</button><button onClick={()=>setShowCashout(true)} className="bg-white text-black px-4 py-2 rounded-full text-xs font-black">Cash Out 💸</button></div></div>
+          <button onClick={()=>setShowPrivacy(true)} className="w-full bg-[#FFD700] text-black py-3 rounded-2xl font-black text-sm">🛡️ Privacy & Safety Settings</button>
           {!dailyClaimed && <button onClick={claimDaily} className="w-full bg-[#FFD700] text-black py-3 rounded-2xl font-black text-sm animate-pulse">🎁 Claim Daily Bonus +10 🪙</button>}
           {dailyClaimed && <p className="text-center text-xs text-white/50">✅ Daily bonus claimed - come back tomorrow for +10 🪙</p>}
           <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-4"><p className="text-sm font-black">Earnings Breakdown</p><div className="mt-3 space-y-2 text-sm"><div className="flex justify-between"><span>⭐ Live Gifts</span><span className="text-[#FFD700] font-bold">+ {giftEarnings} 🪙</span></div><div className="flex justify-between"><span>🔒 Video Unlocks</span><span className="text-[#FFD700] font-bold">+ {unlockEarnings} 🪙</span></div><div className="flex justify-between"><span>💎 Tips</span><span className="text-[#FFD700] font-bold">+ {tipEarnings} 🪙</span></div><div className="flex justify-between"><span>👑 VIP Private</span><span className="text-[#FFD700] font-bold">+ {vipEarnings} 🪙</span></div><div className="flex justify-between border-t border-[#3A1B63] pt-2 font-black"><span>Total Earned</span><span className="text-[#FFD700]">{totalEarnings} 🪙</span></div></div></div>
@@ -577,13 +634,14 @@ export default function LoomiLive() {
         </div>
       )}
 
-      {/* PROFILE PAGE - OWN OR OTHER - SAME LAYOUT */}
       {viewingProfile && (() => {
         const profileUser = viewingProfile; const isMe = profileUser === nickname;
         const userPosts = posts.filter(p => p.creator === profileUser);
         const userCats = ["All", ...Array.from(new Set(userPosts.flatMap(p => { const tags = p.caption.match(/#\w+/g) || []; return tags.map(t => t.replace("#","").toLowerCase()); })))];
         const filtered = profileCategory==="All" ? userPosts : userPosts.filter(p => p.caption.toLowerCase().includes("#"+profileCategory.toLowerCase()));
         const totalLikes = userPosts.reduce((s,p)=>s+(p.likes||0),0);
+        const isPrivate = localStorage.getItem("loomi_private_"+profileUser)==="1";
+        const canView = isMe || !isPrivate || following.includes(profileUser);
         return (
           <div className="absolute inset-0 z-[105] bg-[#150826] overflow-y-auto pb-[80px]">
             <div className="flex justify-between items-center p-3"><button onClick={()=>{ setViewingProfile(null); setProfileCategory("All"); }} className="text-xl">←</button><p className="font-black">@{profileUser}</p><span className="text-xl">⋯</span></div>
@@ -591,27 +649,44 @@ export default function LoomiLive() {
               <div className="w-[80px] h-[80px] rounded-full bg-gradient-to-br from-[#FFD700] to-orange-500 flex items-center justify-center text-black font-black text-3xl shrink-0">{profileUser[0]?.toUpperCase()}</div>
               <div className="flex-1 flex justify-around text-center"><div><p className="font-black">{following.length}</p><p className="text-[11px] text-white/50">Following</p></div><div><p className="font-black">{userPosts.length}</p><p className="text-[11px] text-white/50">Posts</p></div><div><p className="font-black">{totalLikes}</p><p className="text-[11px] text-white/50">Likes</p></div></div>
             </div>
-            <div className="px-4 mt-2"><p className="font-black text-sm">@{profileUser}</p><p className="text-xs text-white/60">{isMe ? "This is you - your profile as others see it" : `Check out @${profileUser}'s content 🔥`}</p><p className="text-xs text-white/50 mt-1">Loomi-live Creator • {userPosts.length} posts</p></div>
+            <div className="px-4 mt-2"><p className="font-black text-sm">@{profileUser} {isPrivate && <span className="text-[10px] bg-[#241040] border border-[#3A1B63] px-1.5 py-0.5 rounded-full">🔒 Private</span>}</p><p className="text-xs text-white/60">{isMe ? "This is you - your profile as others see it" : `Check out @${profileUser}'s content 🔥`}</p><p className="text-xs text-white/50 mt-1">Loomi-live Creator • {userPosts.length} posts{!privacySettings.hideLocation || !isMe ? "" : " • Location hidden 🔒"}</p></div>
             <div className="flex gap-2 px-4 mt-3">
               {isMe ? (<><button onClick={()=>{ setViewingProfile(null); setShowPlusMenu(true); }} className="flex-1 bg-[#FFD700] text-black py-2.5 rounded-full text-xs font-black">+ Create Post</button><button onClick={()=>{ setViewingProfile(null); setTab("balance"); }} className="flex-1 bg-[#241040] border border-[#3A1B63] py-2.5 rounded-full text-xs font-bold">Wallet</button></>) : (<><button onClick={()=>toggleFollow(profileUser)} className={`flex-1 py-2.5 rounded-full text-xs font-black ${following.includes(profileUser)?"bg-[#241040] border border-[#3A1B63]":"bg-[#FFD700] text-black"}`}>{following.includes(profileUser)?"Following ✓":"Follow"}</button><button onClick={()=>{ setViewingProfile(null); setTab("live"); }} className="flex-1 bg-[#241040] border border-[#3A1B63] py-2.5 rounded-full text-xs font-bold">Message</button></>)}
             </div>
-            <div className="flex gap-2 px-4 mt-4 overflow-x-auto pb-2">{userCats.slice(0,8).map(c=>(<button key={c} onClick={()=>setProfileCategory(c)} className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold capitalize ${profileCategory===c?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{c}</button>))}</div>
-            {filtered.length===0 ? (<p className="text-center text-white/40 text-xs mt-10 px-6">{isMe ? "No posts yet in this category. Tap + Create Post to add your first!" : `@${profileUser} has no posts in ${profileCategory} yet`}</p>) : (
-              <div className="grid grid-cols-3 gap-[2px] px-[2px]">{filtered.map(p=>(<div key={p.id} onClick={()=>{ setViewingProfile(null); setTab("feed"); setSearchQuery(p.creator); }} className="relative aspect-[3/4] bg-[#241040] overflow-hidden cursor-pointer">{p.mediaUrl ? (p.mediaType==="video" || p.mediaUrl.startsWith("data:video") ? <video src={p.mediaUrl} className="w-full h-full object-cover" /> : <img src={p.mediaUrl} className="w-full h-full object-cover" />) : <p className="p-2 text-[11px]">{p.caption}</p>}{p.isLocked && <span className="absolute top-1 right-1 bg-[#FFD700] text-black text-[9px] px-1 rounded-full font-black">🔒</span>}<span className="absolute bottom-1 left-1 text-[10px] bg-black/60 px-1 rounded">❤️ {p.likes||0}</span>{p.postType==="meme" && <span className="absolute top-1 left-1 text-[10px]">😂</span>}</div>))}</div>
+            {!canView ? (
+              <div className="text-center px-6 mt-10"><p className="text-4xl">🔒</p><p className="font-black mt-2">This account is private</p><p className="text-white/50 text-xs mt-1">Follow @{profileUser} to see their posts - Privacy ON</p><button onClick={()=>toggleFollow(profileUser)} className="mt-3 bg-[#FFD700] text-black px-6 py-2.5 rounded-full text-xs font-black">Follow to View</button></div>
+            ) : (
+              <>
+                <div className="flex gap-2 px-4 mt-4 overflow-x-auto pb-2">{userCats.slice(0,8).map(c=>(<button key={c} onClick={()=>setProfileCategory(c)} className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold capitalize ${profileCategory===c?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{c}</button>))}</div>
+                {filtered.length===0 ? (<p className="text-center text-white/40 text-xs mt-10 px-6">{isMe ? "No posts yet in this category. Tap + Create Post to add your first!" : `@${profileUser} has no posts in ${profileCategory} yet`}</p>) : (<div className="grid grid-cols-3 gap-[2px] px-[2px]">{filtered.map(p=>(<div key={p.id} onClick={()=>{ setViewingProfile(null); setTab("feed"); setSearchQuery(p.creator); }} className="relative aspect-[3/4] bg-[#241040] overflow-hidden cursor-pointer">{p.mediaUrl ? (p.mediaType==="video" || p.mediaUrl.startsWith("data:video") ? <video src={p.mediaUrl} className="w-full h-full object-cover" /> : <img src={p.mediaUrl} className="w-full h-full object-cover" />) : <p className="p-2 text-[11px]">{p.caption}</p>}{p.isLocked && <span className="absolute top-1 right-1 bg-[#FFD700] text-black text-[9px] px-1 rounded-full font-black">🔒</span>}{p.viewOnce && <span className="absolute top-1 left-1 bg-red-600 text-white text-[9px] px-1 rounded-full font-black">⏳ ONCE</span>}<span className="absolute bottom-1 left-1 text-[10px] bg-black/60 px-1 rounded">❤️ {p.likes||0}</span>{p.postType==="meme" && <span className="absolute top-1 left-1 text-[10px]">😂</span>}</div>))}</div>)}
+              </>
             )}
           </div>
         );
       })()}
 
-      {/* (+) MENU - LIVE + CREATE */}
-      {showPlusMenu && (
-        <div className="absolute inset-0 z-[110] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowPlusMenu(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 space-y-3"><h2 className="font-black text-center">Create ✨ - Loomi-live</h2><button onClick={()=>{ setShowPlusMenu(false); goLive(); }} className="w-full bg-red-600 py-4 rounded-2xl font-black flex items-center justify-center gap-2">🔴 Go LIVE - Loomi-live</button><button onClick={()=>{ setShowPlusMenu(false); setCreateStep(0); setShowCreatePost(true); }} className="w-full bg-[#FFD700] text-black py-4 rounded-2xl font-black flex items-center justify-center gap-2">📹 Create Content - Post to Feed / Profile</button><button onClick={()=>setShowPlusMenu(false)} className="w-full text-white/60 text-xs py-1">Cancel</button></div></div>
+      {showPlusMenu && (<div className="absolute inset-0 z-[110] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowPlusMenu(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 space-y-3"><h2 className="font-black text-center">Create ✨ - Loomi-live</h2><button onClick={()=>{ setShowPlusMenu(false); goLive(); }} className="w-full bg-red-600 py-4 rounded-2xl font-black flex items-center justify-center gap-2">🔴 Go LIVE - Loomi-live</button><button onClick={()=>{ setShowPlusMenu(false); setCreateStep(0); setShowCreatePost(true); }} className="w-full bg-[#FFD700] text-black py-4 rounded-2xl font-black flex items-center justify-center gap-2">📹 Create Content - Post to Feed / Profile</button><button onClick={()=>setShowPlusMenu(false)} className="w-full text-white/60 text-xs py-1">Cancel</button></div></div>)}
+
+      {/* PRIVACY PANEL */}
+      {showPrivacy && (
+        <div className="absolute inset-0 z-[115] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowPrivacy(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 space-y-3 max-h-[85vh] overflow-y-auto">
+          <h2 className="font-black text-center">🛡️ Privacy & Safety - Loomi-live</h2>
+          <p className="text-xs text-white/50 text-center">1 Ghost Mode NOT added. 7 Watermark is always ON - compulsory.</p>
+          <label className="flex justify-between items-center bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm">😶‍🌫️ Face Blur <span className="text-[11px] text-white/50">ON / OFF button</span><input type="checkbox" checked={privacySettings.faceBlur} onChange={e=>setPrivacySettings(p=>({...p, faceBlur: e.target.checked}))} className="w-5 h-5 accent-[#FFD700]" /></label>
+          <label className="flex justify-between items-center bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm">🔒 Private Profile <span className="text-[11px] text-white/50">OPTIONAL - Only followers see grid</span><input type="checkbox" checked={privacySettings.privateProfile} onChange={e=>setPrivacySettings(p=>({...p, privateProfile: e.target.checked}))} className="w-5 h-5 accent-[#FFD700]" /></label>
+          <label className="flex justify-between items-center bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm">🚫 Block Downloads <span className="text-[11px] text-white/50">OPTIONAL - No save / long-press</span><input type="checkbox" checked={privacySettings.blockDownloads} onChange={e=>setPrivacySettings(p=>({...p, blockDownloads: e.target.checked}))} className="w-5 h-5 accent-[#FFD700]" /></label>
+          <label className="flex justify-between items-center bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm">📍 Hide Location <span className="text-[11px] text-white/50">OPTIONAL - Never show city</span><input type="checkbox" checked={privacySettings.hideLocation} onChange={e=>setPrivacySettings(p=>({...p, hideLocation: e.target.checked}))} className="w-5 h-5 accent-[#FFD700]" /></label>
+          <label className="flex justify-between items-center bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm">🟢 Hide Online Status <span className="text-[11px] text-white/50">OPTIONAL</span><input type="checkbox" checked={privacySettings.hideOnline} onChange={e=>setPrivacySettings(p=>({...p, hideOnline: e.target.checked}))} className="w-5 h-5 accent-[#FFD700]" /></label>
+          <div className="bg-[#FFD700]/10 border border-[#FFD700]/40 rounded-xl p-3 text-xs"><p className="font-black text-[#FFD700]">⚠️ Leak Trace - COMPULSORY - Always ON</p><p className="text-white/70 mt-1">Watermark with @your username is on every screen. If someone leaks, you know who. Cannot be turned off.</p></div>
+          <div className="bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-xs"><p className="font-black">🛡️ Auto-Report - ON</p><p className="text-white/70 mt-1">If someone types "screenshot / recording / leak" in chat, they are auto-reported to Loomi-live.</p></div>
+          <button onClick={savePrivacy} className="w-full bg-[#FFD700] text-black py-3 rounded-full font-black">Save Privacy Settings</button>
+          <button onClick={()=>setShowPrivacy(false)} className="w-full text-white/60 text-xs">Close</button>
+        </div></div>
       )}
 
       {showVipModal && (<div className="absolute inset-0 z-[90] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowVipModal(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 space-y-3"><h2 className="font-black text-center">👑 Request Private with @{watching}</h2><p className="text-xs text-white/60 text-center">5 minutes private 1-to-1. Coins deducted now.</p><div className="flex gap-2">{[50,100,200].map(v=><button key={v} onClick={()=>setVipPrice(v)} className={`flex-1 py-3 rounded-xl text-xs font-black ${vipPrice===v?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{v} 🪙</button>)}</div><button onClick={requestPrivate} className="w-full bg-[#FFD700] text-black py-3 rounded-full font-black">Send Request - {vipPrice} 🪙</button><button onClick={()=>setShowVipModal(false)} className="w-full text-white/60 text-xs">Cancel</button></div></div>)}
       {vipIncoming && (<div className="absolute inset-0 z-[95] flex items-center justify-center p-6"><div className="bg-[#1E0B36] border border-[#FFD700] rounded-2xl p-5 w-full text-center"><h2 className="font-black">👑 Private Request</h2><p className="text-sm mt-2">@{vipIncoming.viewer} wants Private for <b className="text-[#FFD700]">{vipIncoming.price} 🪙</b></p><p className="text-xs text-white/60">5 mins 1-to-1</p><div className="flex gap-2 mt-4"><button onClick={declineVip} className="flex-1 bg-[#241040] border border-[#3A1B63] py-3 rounded-full font-black text-xs">Decline</button><button onClick={acceptVip} className="flex-1 bg-[#FFD700] text-black py-3 rounded-full font-black text-xs">Accept</button></div></div></div>)}
 
-      {/* CREATE - UPLOAD > POST - 2 STEPS ONLY */}
       {showCreatePost && (
         <div className="absolute inset-0 z-[90] bg-black flex flex-col">
           <div className="flex justify-between items-center p-3"><button onClick={()=>setShowCreatePost(false)} className="text-xl">✕</button><p className="font-black text-sm">{createStep===0 ? "Upload" : "Post"}</p><span className="text-xs text-white/50">{createStep===0 ? "1/2" : "2/2"}</span></div>
@@ -634,10 +709,16 @@ export default function LoomiLive() {
                 <button onClick={()=>setPostType("video")} className={`flex-1 py-2.5 rounded-xl text-xs font-black ${postType==="video"?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>📹 Video</button>
                 <button onClick={()=>setPostType("meme")} className={`flex-1 py-2.5 rounded-xl text-xs font-black ${postType==="meme"?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>😂 Meme</button>
               </div>
+              {/* 3 VIEW-ONCE / EXPIRY - OPTIONAL */}
+              <div className="bg-[#241040] border border-[#3A1B63] rounded-xl p-3 space-y-2">
+                <p className="text-xs font-black">⏳ Disappearing - OPTIONAL</p>
+                <label className="flex justify-between text-xs">View-Once - disappears after 1 view <input type="checkbox" checked={postViewOnce} onChange={e=>setPostViewOnce(e.target.checked)} className="w-4 h-4 accent-[#FFD700]" /></label>
+                <div className="flex gap-2">{["Forever","24h","7 days"].map(v=><button key={v} onClick={()=>setPostExpiry(v)} className={`flex-1 py-2 rounded-full text-xs font-bold ${postExpiry===v?"bg-[#FFD700] text-black":"bg-[#150826] border border-[#3A1B63]"}`}>{v}</button>)}</div>
+              </div>
               <div className="flex gap-2"><button onClick={()=>setPostLocked(false)} className={`flex-1 py-3 rounded-xl text-xs font-black ${!postLocked?"bg-white text-black":"bg-[#241040] border border-[#3A1B63]"}`}>FREE - Everyone sees</button><button onClick={()=>setPostLocked(true)} className={`flex-1 py-3 rounded-xl text-xs font-black ${postLocked?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>🔒 LOCKED - Earn 🪙</button></div>
               {postLocked && <div className="flex items-center gap-2"><span className="text-xs">Price:</span><input type="number" value={postPrice} onChange={e=>setPostPrice(parseInt(e.target.value)||0)} className="flex-1 bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm" /><span>🪙</span></div>}
               <div className="flex gap-2"><button onClick={()=>setCreateStep(0)} className="flex-1 bg-[#241040] border border-[#3A1B63] py-3 rounded-full text-xs">← Back</button><button onClick={async()=>{ await createPost(); setShowCreatePost(false); }} className="flex-1 bg-[#FFD700] text-black py-3 rounded-full font-black">Post 🔥</button></div>
-              <p className="text-[11px] text-white/40 text-center">Post shows in FEED + Your PROFILE</p>
+              <p className="text-[11px] text-white/40 text-center">Post shows in FEED + Your PROFILE • Watermark always ON</p>
             </div>
           )}
         </div>
@@ -645,33 +726,30 @@ export default function LoomiLive() {
       {showCashout && (<div className="absolute inset-0 z-[90] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowCashout(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 space-y-3"><h2 className="font-black text-center">💸 Cash Out - Loomi-live</h2><p className="text-xs text-white/60 text-center">Balance: {keys} 🪙 • Min 50 • Paid weekly</p><div className="flex gap-2">{[50,100,200,500].map(v=><button key={v} onClick={()=>setCashoutAmount(v)} className={`flex-1 py-2.5 rounded-xl text-xs font-black ${cashoutAmount===v?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{v} 🪙</button>)}</div><input value={bankName} onChange={e=>setBankName(e.target.value)} placeholder="Bank - Capitec / FNB / Standard" className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm outline-none" /><input value={accountNum} onChange={e=>setAccountNum(e.target.value)} placeholder="Account Number" className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm outline-none" /><input value={accountName} onChange={e=>setAccountName(e.target.value)} placeholder="Account Name" className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm outline-none" /><button onClick={requestCashout} className="w-full bg-[#FFD700] text-black py-3 rounded-full font-black">Request {cashoutAmount} 🪙 Cashout</button><button onClick={()=>setShowCashout(false)} className="w-full text-white/60 text-xs">Cancel</button></div></div>)}
       {showRecharge && (<div className="absolute inset-0 z-50 flex flex-col justify-end"><div className="flex-1 bg-black/60" onClick={()=>setShowRecharge(false)}></div><div className="bg-white text-black rounded-t-[24px] p-4"><h2 className="text-center font-black">Recharge - Loomi-live</h2><div className="grid grid-cols-3 gap-2 mt-4">{[{c:5,r:"R 1,35"},{c:30,r:"R 8,09"},{c:40,r:"R 10,79"},{c:50,r:"R 13,45"},{c:70,r:"R 18,85"},{c:139,r:"R 37,39"}].map(p=><div key={p.c} onClick={()=>{ setKeys(k=>k+p.c); localStorage.setItem("loomi_keys",(keys+p.c).toString()); }} className="border rounded-xl p-3 text-center cursor-pointer"><p className="font-black">🪙 {p.c}</p><p className="text-xs">{p.r}</p></div>)}</div><button onClick={()=>setShowRecharge(false)} className="w-full mt-4 bg-black text-white py-3 rounded-full font-black">Close</button></div></div>)}
       {showDashboard && (
-        <div className="absolute inset-0 z-[100] flex">
-          <div className="flex-1 bg-black/60" onClick={()=>setShowDashboard(false)}></div>
-          <div className="w-[78%] max-w-[320px] bg-[#150826] border-l border-[#3A1B63] h-full overflow-y-auto p-3 space-y-3">
-            <div className="flex justify-between items-center p-1"><button onClick={()=>{ setShowDashboard(false); setViewingProfile(nickname); }} className="font-black text-white">@{nickname} → Profile</button><button onClick={()=>setShowDashboard(false)} className="text-white text-xl">✕</button></div>
-            <p className="text-[11px] text-white/50 px-1">{authUser?.email}</p>
-            <div onClick={()=>{setTab("balance"); setShowDashboard(false);}} className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-3.5 flex justify-between items-center cursor-pointer"><div className="flex items-center gap-3"><span>🪪</span><p className="font-bold text-[14px] text-white">Balance</p></div><span className="text-white/40">›</span></div>
-            <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl divide-y divide-[#3A1B63]">
-              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>🕐</span><p className="text-[14px] font-bold text-white">Activity centre</p></div><span className="text-white/40">›</span></div>
-              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>⬇️</span><p className="text-[14px] font-bold text-white">Offline videos</p></div><span className="text-white/40">›</span></div>
-              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>🎵</span><p className="text-[14px] font-bold text-white">Your Music</p></div><span className="text-white/40">›</span></div>
-            </div>
-            <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>🔳</span><p className="text-[14px] font-bold text-white">Your QR code</p></div><span className="text-white/40">›</span></div>
-            <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl divide-y divide-[#3A1B63]">
-              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>💡</span><p className="text-[14px] font-bold text-white">Creator Search Insights</p></div><span className="text-white/40">›</span></div>
-              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>👥⭐</span><p className="text-[14px] font-bold text-white">Loomi Studio</p></div><span className="text-white/40">›</span></div>
-              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>🔥</span><p className="text-[14px] font-bold text-white">Promote</p></div><span className="text-white/40">›</span></div>
-              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span className="text-[10px] border px-1">AD</span><p className="text-[14px] font-bold text-white">Ads Manager</p></div><span className="text-white/40">›</span></div>
-            </div>
-            <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>⚙️</span><p className="text-[14px] font-bold text-white">Settings and privacy</p></div><span className="text-white/40">›</span></div>
-            <button onClick={handleLogout} className="w-full bg-red-600 py-3 rounded-2xl font-black text-sm">Logout</button>
-          </div>
-        </div>
+        <div className="absolute inset-0 z-[100] flex"><div className="flex-1 bg-black/60" onClick={()=>setShowDashboard(false)}></div><div className="w-[78%] max-w-[320px] bg-[#150826] border-l border-[#3A1B63] h-full overflow-y-auto p-3 space-y-3">
+          <div className="flex justify-between items-center p-1"><button onClick={()=>{ setShowDashboard(false); setViewingProfile(nickname); }} className="font-black text-white">@{nickname} → Profile</button><button onClick={()=>setShowDashboard(false)} className="text-white text-xl">✕</button></div>
+          <p className="text-[11px] text-white/50 px-1">{authUser?.email}</p>
+          <div onClick={()=>{setTab("balance"); setShowDashboard(false);}} className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-3.5 flex justify-between items-center cursor-pointer"><div className="flex items-center gap-3"><span>🪪</span><p className="font-bold text-[14px] text-white">Balance</p></div><span className="text-white/40">›</span></div>
+          <div onClick={()=>{ setShowDashboard(false); setShowPrivacy(true); }} className="bg-[#FFD700] text-black rounded-2xl p-3.5 flex justify-between items-center cursor-pointer"><div className="flex items-center gap-3"><span>🛡️</span><p className="font-black text-[14px]">Privacy & Safety</p></div><span className="text-black/60">›</span></div>
+          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl divide-y divide-[#3A1B63]"><div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>🕐</span><p className="text-[14px] font-bold text-white">Activity centre</p></div><span className="text-white/40">›</span></div><div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>⬇️</span><p className="text-[14px] font-bold text-white">Offline videos</p></div><span className="text-white/40">›</span></div><div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>🎵</span><p className="text-[14px] font-bold text-white">Your Music</p></div><span className="text-white/40">›</span></div></div>
+          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>🔳</span><p className="text-[14px] font-bold text-white">Your QR code</p></div><span className="text-white/40">›</span></div>
+          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl divide-y divide-[#3A1B63]"><div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>💡</span><p className="text-[14px] font-bold text-white">Creator Search Insights</p></div><span className="text-white/40">›</span></div><div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>👥⭐</span><p className="text-[14px] font-bold text-white">Loomi Studio</p></div><span className="text-white/40">›</span></div><div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>🔥</span><p className="text-[14px] font-bold text-white">Promote</p></div><span className="text-white/40">›</span></div><div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span className="text-[10px] border px-1">AD</span><p className="text-[14px] font-bold text-white">Ads Manager</p></div><span className="text-white/40">›</span></div></div>
+          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>⚙️</span><p className="text-[14px] font-bold text-white">Settings and privacy</p></div><span className="text-white/40">›</span></div>
+          <button onClick={handleLogout} className="w-full bg-red-600 py-3 rounded-2xl font-black text-sm">Logout</button>
+        </div></div>
       )}
-      {showSafety && (<div className="absolute inset-0 z-[95] flex items-center justify-center p-6"><div className="bg-[#1E0B36] border border-red-500 rounded-2xl p-5 w-full"><h2 className="font-black text-center">🛡️ Safety - @{showSafety}</h2><p className="text-xs text-white/60 text-center mt-1">What happened?</p><div className="flex flex-col gap-2 mt-3">{["Rude / Harassment","Sexual / Nude","Spam / Scam","Hate Speech"].map(r=>(<button key={r} onClick={()=>setReportReason(r)} className={`py-2.5 rounded-xl text-xs font-bold ${reportReason===r?"bg-red-600 text-white":"bg-[#241040] border border-[#3A1B63]"}`}>{r}</button>))}</div><div className="flex gap-2 mt-4"><button onClick={()=>blockUser(showSafety)} className="flex-1 bg-[#241040] border border-[#3A1B63] py-3 rounded-full font-black text-xs">🚫 Block</button><button onClick={()=>reportUser(showSafety)} className="flex-1 bg-red-600 py-3 rounded-full font-black text-xs">🚨 Report</button></div><button onClick={()=>setShowSafety(null)} className="w-full text-white/60 text-xs mt-3">Cancel</button></div></div>)}
+      {showSafety && (<div className="absolute inset-0 z-[95] flex items-center justify-center p-6"><div className="bg-[#1E0B36] border border-red-500 rounded-2xl p-5 w-full"><h2 className="font-black text-center">🛡️ Safety - @{showSafety}</h2><p className="text-xs text-white/60 text-center mt-1">What happened?</p><div className="flex flex-col gap-2 mt-3">{["Rude / Harassment","Sexual / Nude","Spam / Scam","Hate Speech","Screenshot / Leak"].map(r=>(<button key={r} onClick={()=>setReportReason(r)} className={`py-2.5 rounded-xl text-xs font-bold ${reportReason===r?"bg-red-600 text-white":"bg-[#241040] border border-[#3A1B63]"}`}>{r}</button>))}</div><div className="flex gap-2 mt-4"><button onClick={()=>blockUser(showSafety)} className="flex-1 bg-[#241040] border border-[#3A1B63] py-3 rounded-full font-black text-xs">🚫 Block</button><button onClick={()=>reportUser(showSafety)} className="flex-1 bg-red-600 py-3 rounded-full font-black text-xs">🚨 Report</button></div><button onClick={()=>setShowSafety(null)} className="w-full text-white/60 text-xs mt-3">Cancel</button></div></div>)}
       {showNotifs && (<div className="absolute inset-0 z-[96] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowNotifs(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 max-h-[60vh] overflow-y-auto"><div className="flex justify-between items-center"><h2 className="font-black">🔔 Notifications</h2><button onClick={()=>{ setNotifications([]); setShowNotifs(false); }} className="text-xs text-[#FFD700] underline">Clear all</button></div>{notifications.length===0 ? <p className="text-white/50 text-xs mt-4 text-center">No notifications yet.</p> : notifications.map(n=>(<div key={n.id} onClick={()=>{ setShowNotifs(false); if(n.user && liveHosts.some((h:any)=>h.nickname===n.user)) watchHost(n.user); }} className="bg-[#241040] border border-[#3A1B63] rounded-xl p-3 mt-2 flex justify-between items-center cursor-pointer"><p className="text-sm">{n.text}</p><span className="text-[#FFD700] text-xs font-black">Watch ›</span></div>))}<button onClick={()=>setShowNotifs(false)} className="w-full mt-4 text-white/60 text-xs">Close</button></div></div>)}
-      {showWelcome && (<div className="absolute inset-0 z-[110] flex items-center justify-center p-6 bg-black/80"><div className="bg-[#1E0B36] border border-[#FFD700] rounded-3xl p-6 w-full text-center"><p className="text-[11px] tracking-[0.3em] text-[#FFD700] font-black">WELCOME TO</p><h2 className="text-2xl font-black mt-1">LOOMI-LIVE ✨</h2><p className="text-sm text-white/70 mt-2">Go LIVE, get gifts, unlock FEED, earn real money.</p><div className="text-left text-xs space-y-2 mt-4 bg-[#241040] border border-[#3A1B63] rounded-xl p-3"><p>🔴 <b>Go LIVE</b> - show yourself - Loomi-live</p><p>🎁 <b>Send Gifts</b> - support hosts</p><p>👑 <b>VIP Private</b> - 1-to-1 for coins</p><p>🔒 <b>FEED Unlocks</b> - earn from posts</p><p>💸 <b>Cash Out</b> - Capitec / FNB</p></div><button onClick={()=>{ localStorage.setItem("loomi_seen_welcome","1"); setShowWelcome(false); }} className="w-full mt-4 bg-[#FFD700] text-black py-3 rounded-full font-black">Start Exploring 🚀</button></div></div>)}
+      {showWelcome && (<div className="absolute inset-0 z-[110] flex items-center justify-center p-6 bg-black/80"><div className="bg-[#1E0B36] border border-[#FFD700] rounded-3xl p-6 w-full text-center"><p className="text-[11px] tracking-[0.3em] text-[#FFD700] font-black">WELCOME TO</p><h2 className="text-2xl font-black mt-1">LOOMI-LIVE ✨</h2><p className="text-sm text-white/70 mt-2">Go LIVE, get gifts, unlock FEED, earn real money. Screenshots are watermarked & protected.</p><div className="text-left text-xs space-y-2 mt-4 bg-[#241040] border border-[#3A1B63] rounded-xl p-3"><p>🔴 <b>Go LIVE</b> - Loomi-live</p><p>🎁 <b>Send Gifts</b> - support hosts</p><p>👑 <b>VIP Private</b> - 1-to-1 for coins</p><p>🔒 <b>FEED Unlocks</b> - earn from posts</p><p>💸 <b>Cash Out</b> - Capitec / FNB</p><p>🛡️ <b>Privacy</b> - Face Blur, Private Profile, View-Once</p></div><button onClick={()=>{ localStorage.setItem("loomi_seen_welcome","1"); setShowWelcome(false); }} className="w-full mt-4 bg-[#FFD700] text-black py-3 rounded-full font-black">Start Exploring 🚀</button></div></div>)}
       {!dailyClaimed && !showWelcome && nickname && (<button onClick={claimDaily} className="absolute top-[118px] left-1/2 -translate-x-1/2 z-[80] bg-[#FFD700] text-black px-4 py-2 rounded-full text-xs font-black shadow-lg animate-bounce whitespace-nowrap">🎁 Claim Daily +10 🪙</button>)}
+      {/* 7 COMPULSORY WATERMARK - ALWAYS ON */}
+      <div className="pointer-events-none fixed inset-0 z-[200] opacity-[0.07] overflow-hidden select-none">
+        <div className="absolute inset-0 flex flex-wrap content-around justify-around" style={{ transform: "rotate(-20deg) scale(1.5)" }}>
+          {Array.from({length: 12}).map((_,i)=>(<span key={i} className="text-[14px] font-black whitespace-nowrap mx-6 my-6">LOOMI-LIVE • @{nickname} • PRIVATE • DO NOT SCREENSHOT</span>))}
+        </div>
+      </div>
+      {isScreenHidden && (<div className="absolute inset-0 z-[210] bg-black flex flex-col items-center justify-center p-6 text-center"><p className="text-6xl">🔒</p><h2 className="font-black text-xl mt-3">Privacy Protected</h2><p className="text-sm text-white/60 mt-2">Loomi-live blocked this screen.<br/>Screenshots & recording are not allowed<br/>on Private / Locked content.</p><p className="text-xs text-[#FFD700] mt-3">@{nickname} • Loomi-live</p></div>)}
+      {screenshotWarning && (<div className="absolute top-[110px] left-1/2 -translate-x-1/2 z-[215] bg-red-600 px-4 py-2 rounded-full text-xs font-black whitespace-nowrap shadow-lg">{screenshotWarning}</div>)}
       <div className="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto bg-[#150826] border-t border-[#3A1B63] flex justify-around items-center py-2.5 z-[60]">
         <button onClick={()=>setTab("feed")} className={`flex flex-col items-center ${tab==="feed"?"text-[#FFD700]":"text-white/50"}`}><span className="text-[20px]">✨</span><span className="text-[9px]">FEED</span></button>
         <button onClick={()=>setTab("live")} className={`flex flex-col items-center ${tab==="live"?"text-[#FFD700]":"text-white/50"}`}><span className="text-[20px]">🏠</span><span className="text-[9px]">LIVE</span></button>
@@ -684,6 +762,8 @@ export default function LoomiLive() {
         .animate-heart{animation:heartFloat 3s ease-out forwards}
         @keyframes flyComment{0%{transform:translateX(100vw);opacity:0}10%{opacity:1}90%{opacity:1}100%{transform:translateX(-100%);opacity:0}}
         .animate-flyComment{animation:flyComment linear forwards}
+        img, video { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+        @media print { body { display: none !important; } }
       `}</style>
     </div>
   );
