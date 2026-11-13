@@ -12,14 +12,12 @@ type Post = { id: string; creator: string; caption: string; mediaUrl: string; me
 type Floater = { id: string; user: string; msg: string; top: number; duration: number; color: string };
 
 export default function LoomiLive() {
-  // ===== AUTH =====
   const [authUser, setAuthUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authEmail, setAuthEmail] = useState("");
   const [authPass, setAuthPass] = useState("");
   const [authMode, setAuthMode] = useState<"login"|"signup">("signup");
   const [authError, setAuthError] = useState("");
-
   const [nickname, setNickname] = useState("");
   const [tempNick, setTempNick] = useState("");
   const [keys, setKeys] = useState(100);
@@ -29,7 +27,6 @@ export default function LoomiLive() {
   const [liveHosts, setLiveHosts] = useState<any[]>([]);
   const [watching, setWatching] = useState<string | null>(null);
   const [gifts, setGifts] = useState<Fly[]>([]);
-  // FEED FIRST NOW
   const [tab, setTab] = useState<"live"|"discover"|"ranking"|"balance"|"feed">("feed");
   const [rankingTab, setRankingTab] = useState<"viewers"|"guardian">("viewers");
   const [showRecharge, setShowRecharge] = useState(false);
@@ -41,12 +38,18 @@ export default function LoomiLive() {
   const [postLocked, setPostLocked] = useState(false);
   const [postPrice, setPostPrice] = useState(20);
   const [postType, setPostType] = useState<"post"|"meme"|"video">("post");
-  // ===== FEED HOT FEATURES =====
   const [feedFilter, setFeedFilter] = useState<"foryou"|"following"|"trending"|"saved">("foryou");
   const [savedPosts, setSavedPosts] = useState<string[]>(()=>{ try{ return JSON.parse(localStorage.getItem("loomi_saved")||"[]"); }catch{ return []; } });
   const [postComments, setPostComments] = useState<Record<string, any[]>>({});
   const [openComments, setOpenComments] = useState<string | null>(null);
   const [commentInput, setCommentInput] = useState("");
+  // PROFILE + PLUS MENU + UPLOAD>POST - NEW
+  const [viewingProfile, setViewingProfile] = useState<string | null>(null);
+  const [profileCategory, setProfileCategory] = useState("All");
+  const [showPlusMenu, setShowPlusMenu] = useState(false);
+  const [createStep, setCreateStep] = useState<0|1>(0);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [showVipModal, setShowVipModal] = useState(false);
   const [vipPrice, setVipPrice] = useState(100);
   const [vipActive, setVipActive] = useState(false);
@@ -80,7 +83,6 @@ export default function LoomiLive() {
   const [userCategory, setUserCategory] = useState(()=> { try{ return localStorage.getItem("loomi_category") || "Chat"; }catch{ return "Chat"; } });
   const [dailyClaimed, setDailyClaimed] = useState(()=> { try{ return localStorage.getItem("loomi_daily") === new Date().toDateString(); }catch{ return false; } });
   const [showWelcome, setShowWelcome] = useState(()=> { try{ return !localStorage.getItem("loomi_seen_welcome"); }catch{ return false; } });
-  
   const videoRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -109,7 +111,6 @@ export default function LoomiLive() {
     });
     return ()=>unsub();
   }, []);
-
   const handleAuth = async () => {
     setAuthError("");
     if(!authEmail.includes("@")) return setAuthError("Enter a real email like you@gmail.com");
@@ -133,7 +134,6 @@ export default function LoomiLive() {
     }
   };
   const handleLogout = async () => { try{ await signOut(auth); }catch{} localStorage.clear(); location.reload(); };
-
   useEffect(() => { nicknameRef.current = nickname; }, [nickname]);
   useEffect(() => { if (typeof window !== "undefined") remoteStreamRef.current = new MediaStream(); }, []);
   useEffect(() => { if(isLive && streamRef.current && videoRef.current){ videoRef.current.srcObject = streamRef.current; videoRef.current.muted = true; videoRef.current.play().catch(()=>{}); } }, [isLive]);
@@ -158,7 +158,6 @@ export default function LoomiLive() {
     const unsub = onSnapshot(q, s => setPosts(s.docs.map(d => ({ id: d.id, ...d.data() } as Post))), ()=>{});
     return () => unsub();
   }, []);
-  // Load comments for posts
   useEffect(() => {
     const q = query(collection(db, "loomi_post_comments"), orderBy("createdAt", "desc"), limit(200));
     const unsub = onSnapshot(q, s => {
@@ -228,7 +227,7 @@ export default function LoomiLive() {
   };
   const goLive = async () => {
     try {
-      setCamError("");
+      setCamError(""); setTab("live");
       if(streamRef.current){ streamRef.current.getTracks().forEach(t=>t.stop()); streamRef.current = null; }
       if(videoRef.current) videoRef.current.srcObject = null;
       pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear();
@@ -243,7 +242,6 @@ export default function LoomiLive() {
         for(const change of snap.docChanges()){ if(change.type==="added"){ const viewerId = change.doc.id; const data = change.doc.data() as any; if(!data.offer || pcsRef.current.has(viewerId)) continue; const pc = new RTCPeerConnection(ICE); pcsRef.current.set(viewerId, pc); stream.getTracks().forEach(t=> pc.addTrack(t, stream)); pc.onicecandidate = e => { if(e.candidate) addDoc(collection(db, `live_rooms/${nicknameRef.current}/viewers/${viewerId}/candidates_host`), { candidate: e.candidate.toJSON() }); }; onSnapshot(collection(db, `live_rooms/${nicknameRef.current}/viewers/${viewerId}/candidates_viewer`), s => { s.docChanges().forEach(async ch=>{ if(ch.type==="added"){ try{ await pc.addIceCandidate(new RTCIceCandidate(ch.doc.data().candidate)); }catch{} } }); }); await pc.setRemoteDescription(new RTCSessionDescription(data.offer)); const answer = await pc.createAnswer(); await pc.setLocalDescription(answer); await updateDoc(doc(db, `live_rooms/${nicknameRef.current}/viewers/${viewerId}`), { answer: { sdp: answer.sdp, type: answer.type } }); } }
       });
     } catch(e:any){
-      console.log("CAM ERROR", e);
       if(e.name==="NotAllowedError") setCamError("Camera blocked - tap lock icon in browser > Allow Camera > Refresh");
       else if(e.name==="NotFoundError") setCamError("No camera found on this device");
       else if(e.name==="NotReadableError") setCamError("Camera busy - close WhatsApp / Instagram camera, then retry");
@@ -280,18 +278,24 @@ export default function LoomiLive() {
   const sendChat = async () => {
     const t = input.trim(); if(!t) return; const room = currentRoom || (isLive ? nickname : watching); if(!room) return alert("Go LIVE or watch someone first to comment"); const myUser = nicknameRef.current || nickname; setInput("");
     const localMsg = { id: "local-"+Date.now(), room, user: myUser, msg: t, createdAt: { seconds: Date.now()/1000 } }; setChat(prev => [...prev, localMsg]); addFloater(myUser, t);
-    try { await addDoc(collection(db,"live_chat"), { room, user: myUser, msg: t, createdAt: serverTimestamp(), ts: Date.now() }); } catch(e:any) { console.log("CHAT SAVE ERROR:", e); setChatError("Saved locally only - check Firestore Rules"); }
+    try { await addDoc(collection(db,"live_chat"), { room, user: myUser, msg: t, createdAt: serverTimestamp(), ts: Date.now() }); } catch(e:any) { setChatError("Saved locally only - check Firestore Rules"); }
   };
   const sendGift = async (cost:number, emoji:string) => { if(!currentRoom) return alert("Go live or watch first"); if(keys < cost) { setShowRecharge(true); return; } if(cost>0){ const newKeys = keys - cost; setKeys(newKeys); localStorage.setItem("loomi_keys", newKeys.toString()); } triggerGift(emoji); try{ await addDoc(collection(db,"live_chat"), { room: currentRoom, user:nicknameRef.current, msg:`sent ${emoji}`, gift:emoji, cost, createdAt: serverTimestamp(), ts: Date.now() }); }catch{} };
-
-  // ===== FEED LOGIC - HOT =====
-  const isVideoUrl = (url: string) => /\.(mp4|webm|mov)(\?|$)/i.test(url) || url.includes("video") || url.includes("tiktok") || url.includes("youtube") || url.includes("youtu.be");
-  const getMediaType = (url: string, type: string) => { if(type==="video") return "video"; if(!url) return "text"; if(isVideoUrl(url)) return "video"; return "image"; };
+  const isVideoUrl = (url: string) => /\.(mp4|webm|mov)(\?|$)/i.test(url) || url.includes("video");
+  const getMediaType = (url: string, type: string) => { if(type==="video") return "video"; if(!url) return "text"; if(isVideoUrl(url) || url.startsWith("data:video")) return "video"; return "image"; };
+  const handleFileUpload = (e: any) => {
+    const file = e.target.files?.[0]; if(!file) return;
+    if(file.size > 8 * 1024 * 1024) return alert("File too big - pick under 8MB");
+    setUploading(true);
+    const reader = new FileReader();
+    reader.onload = () => { const url = reader.result as string; setPostMedia(url); if(file.type.startsWith("video")) setPostType("video"); else if(postType==="video" && file.type.startsWith("image")) setPostType("post"); setUploading(false); };
+    reader.readAsDataURL(file);
+  };
   const createPost = async () => {
     if(!postCaption.trim() && !postMedia.trim()) return alert("Add caption or media");
     const mediaType = getMediaType(postMedia.trim(), postType);
-    await addDoc(collection(db, "loomi_posts"), { creator: nicknameRef.current, caption: postCaption.trim(), mediaUrl: postMedia.trim(), mediaType, postType: postType, isLocked: postLocked, price: postLocked ? postPrice : 0, likes: 0, likedBy: [], unlockedBy: [], createdAt: serverTimestamp() });
-    setPostCaption(""); setPostMedia(""); setPostLocked(false); setPostPrice(20); setPostType("post"); setShowCreatePost(false);
+    await addDoc(collection(db, "loomi_posts"), { creator: nicknameRef.current, caption: postCaption.trim(), mediaUrl: postMedia.trim(), mediaType, postType, isLocked: postLocked, price: postLocked ? postPrice : 0, likes: 0, likedBy: [], unlockedBy: [], createdAt: serverTimestamp() });
+    setPostCaption(""); setPostMedia(""); setPostLocked(false); setPostPrice(20); setPostType("post"); setCreateStep(0);
   };
   const unlockPost = async (p: Post) => {
     if(p.unlockedBy?.includes(nicknameRef.current) || p.creator === nicknameRef.current) return;
@@ -308,11 +312,7 @@ export default function LoomiLive() {
   const tipPost = async (p: Post) => { await sendGift(5, "💎"); await addDoc(collection(db, "loomi_tips"), { sender: nicknameRef.current, creator: p.creator, postId: p.id, amount: 5, createdAt: serverTimestamp() }); };
   const toggleSavePost = (id: string) => { const next = savedPosts.includes(id) ? savedPosts.filter(x=>x!==id) : [...savedPosts, id]; setSavedPosts(next); localStorage.setItem("loomi_saved", JSON.stringify(next)); };
   const sharePost = async (p: Post) => { const text = `🔥 Check this on LOOMI-LIVE by @${p.creator}: ${p.caption} - ${window.location.origin}`; try{ if(navigator.share) await navigator.share({ title: "LOOMI-LIVE", text, url: window.location.origin }); else { await navigator.clipboard.writeText(text); alert("Post link copied! Share on WhatsApp / TikTok"); } }catch{ await navigator.clipboard.writeText(text); alert("Post link copied!"); } };
-  const sendPostComment = async (postId: string) => {
-    const t = commentInput.trim(); if(!t) return;
-    await addDoc(collection(db, "loomi_post_comments"), { postId, user: nicknameRef.current, msg: t, createdAt: serverTimestamp() });
-    setCommentInput("");
-  };
+  const sendPostComment = async (postId: string) => { const t = commentInput.trim(); if(!t) return; await addDoc(collection(db, "loomi_post_comments"), { postId, user: nicknameRef.current, msg: t, createdAt: serverTimestamp() }); setCommentInput(""); };
   const requestPrivate = async () => {
     if(!watching) return alert("Watch someone first"); if(keys < vipPrice){ setShowRecharge(true); return; }
     const newKeys = keys - vipPrice; setKeys(newKeys); localStorage.setItem("loomi_keys", newKeys.toString());
@@ -329,17 +329,13 @@ export default function LoomiLive() {
   const categories = ["All","Girls","Boys","Music","Chat","Gaming","Dancing"];
   const getCategoryFor = (name: string) => { const cats = ["Girls","Boys","Music","Chat","Gaming","Dancing"]; let sum = 0; for(let i=0;i<name.length;i++) sum+=name.charCodeAt(i); return cats[sum % cats.length]; };
   const filteredHosts = liveHosts.filter((h:any)=>{ const matchesSearch = h.nickname.toLowerCase().includes(searchQuery.toLowerCase()); const hostCat = h.category || getCategoryFor(h.nickname); const matchesCat = selectedCategory==="All" || hostCat===selectedCategory; return matchesSearch && matchesCat; });
-  // FEED FILTERING
   const trendingTags = useMemo(()=>{
     const counts: Record<string, number> = {};
     posts.forEach(p=>{ const tags = p.caption.match(/#\w+/g); if(tags) tags.forEach(t=> counts[t.toLowerCase()] = (counts[t.toLowerCase()]||0)+1); });
     return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([tag, count])=>({ tag, count }));
   }, [posts]);
   const filteredPosts = useMemo(()=>{
-    let base = posts.filter(p=>{
-      if(searchQuery) return p.creator.toLowerCase().includes(searchQuery.toLowerCase()) || p.caption.toLowerCase().includes(searchQuery.toLowerCase());
-      return true;
-    });
+    let base = posts.filter(p=>{ if(searchQuery) return p.creator.toLowerCase().includes(searchQuery.toLowerCase()) || p.caption.toLowerCase().includes(searchQuery.toLowerCase()); return true; });
     if(feedFilter==="following") base = base.filter(p=> following.includes(p.creator) || p.creator===nickname);
     if(feedFilter==="saved") base = base.filter(p=> savedPosts.includes(p.id));
     if(feedFilter==="trending") base = [...base].sort((a,b)=>(b.likes||0)-(a.likes||0)).slice(0,30);
@@ -375,7 +371,6 @@ export default function LoomiLive() {
           <button onClick={()=>setShowDashboard(true)} className="w-8 h-8 bg-[#241040] border border-[#3A1B63] rounded-full text-sm">☰</button>
         </div>
       </div>
-      {/* TOP TABS - FEED FIRST */}
       <div className="flex justify-between items-center border-b border-[#3A1B63] bg-[#150826] px-4 overflow-x-auto">
         <div className="flex gap-5 text-[12px] font-bold whitespace-nowrap">
           <button onClick={()=>setTab("feed")} className={`py-3 ${tab==="feed"?"border-b-2 border-[#FFD700] text-white":"text-white/50"}`}>FEED ✨</button>
@@ -385,28 +380,23 @@ export default function LoomiLive() {
           <button onClick={()=>setTab("balance")} className={`py-3 ${tab==="balance"?"border-b-2 border-[#FFD700]":"text-white/50"}`}>Wallet</button>
         </div>
       </div>
-
       <div className="flex justify-between items-center px-4 py-2 bg-[#150826] text-xs">
-        <span className="font-black">@{nickname} <span className="text-[#FFD700] text-[10px]">• LIVE</span></span>
+        <button onClick={()=>setViewingProfile(nickname)} className="font-black">@{nickname} <span className="text-[#FFD700] text-[10px]">• View Profile →</span></button>
         <div className="flex gap-2">
           <button onClick={()=>setShowFloaters(v=>!v)} className={`px-2 py-1 rounded-full text-[10px] font-bold ${showFloaters?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{showFloaters?"💬 Fly: ON":"💬 Fly: OFF"}</button>
           <button onClick={handleLogout} className="bg-[#241040] border border-[#3A1B63] px-3 py-1 rounded-full text-white/70">Logout</button>
         </div>
       </div>
-
       {vipActive && (<div className="bg-[#FFD700] text-black px-3 py-2 flex justify-between items-center text-xs font-black z-30"><span>👑 PRIVATE with @{vipWith} • {fmtTime(vipSeconds)}</span><button onClick={endVip} className="bg-black text-white px-3 py-1 rounded-full text-[11px]">End Private</button></div>)}
       {vipStatus && <div className="bg-[#241040] border-b border-[#3A1B63] px-3 py-1.5 text-[11px] text-[#FFD700] text-center">{vipStatus}</div>}
       {camError && <div className="bg-red-600 px-3 py-2 text-[11px] text-center font-bold">{camError} • <button onClick={()=>{ setCamError(""); goLive(); }} className="underline">Tap to Retry</button></div>}
 
+      {/* LIVE - LOOMI-LIVE */}
       <div className={`relative bg-[#1E0B36] w-full overflow-hidden ${tab==="live" ? "flex-1 flex flex-col pb-[70px]" : "hidden"}`}>
         <div className="relative flex-1 aspect-[9/14] overflow-hidden bg-black">
           <video ref={videoRef} autoPlay muted playsInline className={`w-full h-full object-cover ${isLive ? "block" : "hidden"}`} style={{ transform: "scaleX(-1)" }} />
           <video ref={remoteRef} autoPlay playsInline className={`w-full h-full object-cover bg-black ${watching ? "block" : "hidden"}`} />
-          {showFloaters && (isLive || watching) && (
-            <div className="absolute inset-0 pointer-events-none overflow-hidden z-[15]">
-              {floaters.map(f=>(<div key={f.id} className="absolute whitespace-nowrap animate-flyComment" style={{ top: `${f.top}%`, animationDuration: `${f.duration}s`, color: f.color }}><span className="bg-black/60 backdrop-blur px-2.5 py-1 rounded-full text-[12px] font-bold shadow-lg">@{f.user}: <span className="text-white">{f.msg}</span></span></div>))}
-            </div>
-          )}
+          {showFloaters && (isLive || watching) && (<div className="absolute inset-0 pointer-events-none overflow-hidden z-[15]">{floaters.map(f=>(<div key={f.id} className="absolute whitespace-nowrap animate-flyComment" style={{ top: `${f.top}%`, animationDuration: `${f.duration}s`, color: f.color }}><span className="bg-black/60 backdrop-blur px-2.5 py-1 rounded-full text-[12px] font-bold shadow-lg">@{f.user}: <span className="text-white">{f.msg}</span></span></div>))}</div>)}
           <div className="absolute inset-0 pointer-events-none overflow-hidden z-10">{gifts.map(g=>(<div key={g.id} className="absolute bottom-20 text-3xl animate-heart" style={{ left: `${g.x}%` }}>{g.emoji}</div>))}</div>
           {(isLive || watching) && (
             <>
@@ -424,7 +414,7 @@ export default function LoomiLive() {
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-b from-[#1E0B36] to-black z-10">
               <p className="text-[11px] tracking-[0.25em] text-[#FFD700] font-black mb-2">LOOMI-LIVE</p>
               <button onClick={goLive} className="bg-[#FFD700] text-black px-10 py-4 rounded-full font-black text-lg shadow-[0_0_30px_rgba(255,215,0,0.4)]">🔴 GO LIVE</button>
-              <p className="mt-3 text-white/50 text-xs">{liveHosts.length} live now</p>
+              <p className="mt-3 text-white/50 text-xs">{liveHosts.length} live now • Loomi-live</p>
               {camError && <p className="mt-2 text-red-400 text-[11px] px-6 text-center">{camError}</p>}
             </div>
           )}
@@ -432,7 +422,7 @@ export default function LoomiLive() {
         {chatError && <div className="bg-red-600/90 px-3 py-1.5 text-[11px] text-center">{chatError}</div>}
         <div className="bg-[#150826] p-2 h-[20vh] overflow-y-auto space-y-1">
           {chat.length===0 && <p className="text-white/30 text-xs text-center pt-2">No comments yet - be first! 💬</p>}
-          {chat.filter(c=>!blockedUsers.includes(c.user)).map((c,i)=><p key={c.id || i} className="text-[13px] cursor-pointer" onClick={()=>{ if(c.user!==nickname) setShowSafety(c.user); }}><span className="text-[#FFD700] font-bold">@{c.user}:</span> <span className="text-white/90">{c.msg}</span> {c.user!==nickname && <span className="text-white/30 text-[10px]"> • tap to report</span>}</p>)}
+          {chat.filter(c=>!blockedUsers.includes(c.user)).map((c,i)=><p key={c.id || i} className="text-[13px] cursor-pointer" onClick={()=>{ if(c.user!==nickname) setShowSafety(c.user); }}><span className="text-[#FFD700] font-bold" onClick={(e)=>{ e.stopPropagation(); setViewingProfile(c.user); }}>@{c.user}:</span> <span className="text-white/90">{c.msg}</span> {c.user!==nickname && <span className="text-white/30 text-[10px]"> • tap to report</span>}</p>)}
           <div ref={chatEndRef} />
         </div>
         <div className="bg-[#241040] border-t border-[#3A1B63] p-2 flex gap-2 overflow-x-auto relative z-30">
@@ -449,52 +439,37 @@ export default function LoomiLive() {
         </div>
       </div>
 
-      {/* ===== FEED - HOT ASF - FIRST TAB ===== */}
+      {/* FEED */}
       {tab==="feed" && (
         <div className="flex-1 bg-[#150826] overflow-y-auto pb-[80px]">
-          {/* Create post bar like Facebook */}
           <div className="p-3">
-            <div onClick={()=>setShowCreatePost(true)} className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-3 flex items-center gap-3 cursor-pointer">
+            <div onClick={()=>{ setCreateStep(0); setShowCreatePost(true); }} className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-3 flex items-center gap-3 cursor-pointer">
               <div className="w-10 h-10 rounded-full bg-[#FFD700] text-black flex items-center justify-center font-black">{nickname[0]?.toUpperCase()||"?"}</div>
               <p className="text-sm text-white/50 flex-1">What's on your mind, @{nickname}? 🤔</p>
               <span className="text-[#FFD700] text-xs font-black">+ Post</span>
             </div>
             <div className="flex gap-2 mt-2">
-              <button onClick={()=>{ setPostType("video"); setShowCreatePost(true); }} className="flex-1 bg-[#241040] border border-[#3A1B63] rounded-full py-2 text-xs font-bold">📹 Video</button>
-              <button onClick={()=>{ setPostType("post"); setShowCreatePost(true); }} className="flex-1 bg-[#241040] border border-[#3A1B63] rounded-full py-2 text-xs font-bold">🖼️ Photo</button>
-              <button onClick={()=>{ setPostType("meme"); setShowCreatePost(true); }} className="flex-1 bg-[#241040] border border-[#3A1B63] rounded-full py-2 text-xs font-bold">😂 Meme</button>
-              <button onClick={()=>{ setPostLocked(true); setShowCreatePost(true); }} className="flex-1 bg-[#FFD700] text-black rounded-full py-2 text-xs font-black">🔒 Paid</button>
+              <button onClick={()=>{ setPostType("video"); setCreateStep(0); setShowCreatePost(true); }} className="flex-1 bg-[#241040] border border-[#3A1B63] rounded-full py-2 text-xs font-bold">📹 Video</button>
+              <button onClick={()=>{ setPostType("post"); setCreateStep(0); setShowCreatePost(true); }} className="flex-1 bg-[#241040] border border-[#3A1B63] rounded-full py-2 text-xs font-bold">🖼️ Photo</button>
+              <button onClick={()=>{ setPostType("meme"); setCreateStep(0); setShowCreatePost(true); }} className="flex-1 bg-[#241040] border border-[#3A1B63] rounded-full py-2 text-xs font-bold">😂 Meme</button>
+              <button onClick={()=>{ setPostLocked(true); setCreateStep(0); setShowCreatePost(true); }} className="flex-1 bg-[#FFD700] text-black rounded-full py-2 text-xs font-black">🔒 Paid</button>
             </div>
           </div>
-
-          {/* Trending hashtags */}
           {trendingTags.length>0 && (
             <div className="px-3 pb-2">
               <p className="text-xs font-black text-[#FFD700] mb-2">🔥 TRENDING NOW</p>
-              <div className="flex gap-2 overflow-x-auto">
-                {trendingTags.map(t=>(
-                  <button key={t.tag} onClick={()=>setSearchQuery(t.tag)} className="whitespace-nowrap bg-[#241040] border border-[#FFD700]/40 rounded-full px-3 py-1.5 text-xs">{t.tag} <span className="text-[#FFD700] font-black">{t.count}</span></button>
-                ))}
-              </div>
+              <div className="flex gap-2 overflow-x-auto">{trendingTags.map(t=>(<button key={t.tag} onClick={()=>setSearchQuery(t.tag)} className="whitespace-nowrap bg-[#241040] border border-[#FFD700]/40 rounded-full px-3 py-1.5 text-xs">{t.tag} <span className="text-[#FFD700] font-black">{t.count}</span></button>))}</div>
             </div>
           )}
-
-          {/* Feed Filters - For You / Following / Trending / Saved */}
           <div className="flex gap-2 px-3 pb-3 overflow-x-auto">
             <button onClick={()=>setFeedFilter("foryou")} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold ${feedFilter==="foryou"?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>✨ For You</button>
             <button onClick={()=>setFeedFilter("following")} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold ${feedFilter==="following"?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>👥 Following</button>
             <button onClick={()=>setFeedFilter("trending")} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold ${feedFilter==="trending"?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>🔥 Trending</button>
             <button onClick={()=>setFeedFilter("saved")} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold ${feedFilter==="saved"?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>🔖 Saved ({savedPosts.length})</button>
           </div>
-
           {searchQuery && <p className="px-3 pb-2 text-xs text-[#FFD700]">Showing {filteredPosts.length} posts for "{searchQuery}" • <button onClick={()=>setSearchQuery("")} className="underline">Clear</button></p>}
           {filteredPosts.length===0 && (
-            <div className="text-center px-6 mt-8">
-              <p className="text-4xl">📸</p>
-              <p className="font-black mt-2">No posts yet in {feedFilter}</p>
-              <p className="text-white/40 text-xs mt-1">Be first to post a video, pic or meme!</p>
-              <button onClick={()=>setShowCreatePost(true)} className="mt-3 bg-[#FFD700] text-black px-6 py-2.5 rounded-full text-xs font-black">Create First Post 🚀</button>
-            </div>
+            <div className="text-center px-6 mt-8"><p className="text-4xl">📸</p><p className="font-black mt-2">No posts yet in {feedFilter}</p><p className="text-white/40 text-xs mt-1">Be first to post a video, pic or meme!</p><button onClick={()=>{ setCreateStep(0); setShowCreatePost(true); }} className="mt-3 bg-[#FFD700] text-black px-6 py-2.5 rounded-full text-xs font-black">Create First Post 🚀</button></div>
           )}
           <div className="space-y-3 px-3">
             {filteredPosts.map(p=>{
@@ -502,17 +477,13 @@ export default function LoomiLive() {
               const isLiked = p.likedBy?.includes(nickname);
               const isSaved = savedPosts.includes(p.id);
               const comments = postComments[p.id] || [];
-              const isVideo = p.mediaType==="video" || isVideoUrl(p.mediaUrl||"");
+              const isVideo = p.mediaType==="video" || isVideoUrl(p.mediaUrl||"") || p.mediaUrl.startsWith("data:video");
               return (
                 <div key={p.id} className="bg-[#241040] border border-[#3A1B63] rounded-2xl overflow-hidden">
-                  {/* Header - Facebook style */}
                   <div className="p-3 flex justify-between items-center">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#FFD700] to-orange-500 text-black flex items-center justify-center font-black">{p.creator[0]?.toUpperCase()}</div>
-                      <div>
-                        <p className="text-sm font-black leading-none">@{p.creator} {p.creator===nickname && <span className="text-[10px] bg-[#FFD700] text-black px-1.5 py-0.5 rounded-full">YOU</span>}</p>
-                        <p className="text-[11px] text-white/40 mt-0.5">{p.postType==="meme" ? "😂 Meme • " : p.postType==="video" || isVideo ? "📹 Video • " : "📝 Post • "} Just now • 🌍</p>
-                      </div>
+                      <div onClick={()=>setViewingProfile(p.creator)} className="w-10 h-10 rounded-full bg-gradient-to-br from-[#FFD700] to-orange-500 text-black flex items-center justify-center font-black cursor-pointer">{p.creator[0]?.toUpperCase()}</div>
+                      <div><button onClick={()=>setViewingProfile(p.creator)} className="text-sm font-black leading-none">@{p.creator} {p.creator===nickname && <span className="text-[10px] bg-[#FFD700] text-black px-1.5 py-0.5 rounded-full">YOU</span>}</button><p className="text-[11px] text-white/40 mt-0.5">{p.postType==="meme" ? "😂 Meme • " : isVideo ? "📹 Video • " : "📝 Post • "} Just now • 🌍 • Tap name to visit profile</p></div>
                     </div>
                     <div className="flex gap-1">
                       {p.creator!==nickname && <button onClick={()=>toggleFollow(p.creator)} className={`px-3 py-1.5 rounded-full text-[11px] font-black ${following.includes(p.creator)?"bg-[#150826] border border-[#3A1B63] text-white/60":"bg-[#FFD700] text-black"}`}>{following.includes(p.creator)?"Following ✓":"Follow"}</button>}
@@ -522,18 +493,10 @@ export default function LoomiLive() {
                   <div className="px-3 pb-2 text-sm text-white/90 leading-relaxed">{renderHashtags(p.caption)}</div>
                   {p.mediaUrl ? (
                     <div className="relative" onDoubleClick={()=>likePost(p)}>
-                      {isUnlocked ? (
-                        isVideo ? <video src={p.mediaUrl} controls playsInline className="w-full max-h-[420px] object-cover bg-black" /> : <img src={p.mediaUrl} alt="" className="w-full max-h-[420px] object-cover" />
-                      ) : (
-                        <div className="relative"><img src={p.mediaUrl} alt="" className="w-full max-h-[320px] object-cover blur-xl opacity-40" /><div className="absolute inset-0 flex flex-col items-center justify-center"><span className="text-4xl">🔒</span><p className="text-xs text-white/70 mt-1">Exclusive content from @{p.creator}</p><button onClick={()=>unlockPost(p)} className="mt-2 bg-[#FFD700] text-black px-5 py-2 rounded-full text-xs font-black">Unlock for {p.price} 🪙</button></div></div>
-                      )}
+                      {isUnlocked ? (isVideo ? <video src={p.mediaUrl} controls playsInline className="w-full max-h-[420px] object-cover bg-black" /> : <img src={p.mediaUrl} alt="" className="w-full max-h-[420px] object-cover" />) : (<div className="relative"><img src={p.mediaUrl} alt="" className="w-full max-h-[320px] object-cover blur-xl opacity-40" /><div className="absolute inset-0 flex flex-col items-center justify-center"><span className="text-4xl">🔒</span><p className="text-xs text-white/70 mt-1">Exclusive content from @{p.creator}</p><button onClick={()=>unlockPost(p)} className="mt-2 bg-[#FFD700] text-black px-5 py-2 rounded-full text-xs font-black">Unlock for {p.price} 🪙</button></div></div>)}
                       {p.isLocked && <span className="absolute top-2 right-2 bg-[#FFD700] text-black text-[10px] px-2 py-1 rounded-full font-black">🔒 {p.price} 🪙</span>}
-                      {isVideo && isUnlocked && <span className="absolute bottom-2 left-2 bg-black/70 px-2 py-1 rounded-full text-[10px]">▶️ Tap to play • Double-tap to ❤️</span>}
                     </div>
-                  ) : !isUnlocked ? (
-                    <div className="p-4 text-center bg-black/20"><p className="text-white/60 text-xs">🔒 Locked post - unlock to view</p><button onClick={()=>unlockPost(p)} className="mt-2 bg-[#FFD700] text-black px-5 py-2 rounded-full text-xs font-black">Unlock for {p.price} 🪙</button></div>
-                  ) : null}
-                  {/* Actions - Facebook / TikTok style */}
+                  ) : !isUnlocked ? (<div className="p-4 text-center bg-black/20"><p className="text-white/60 text-xs">🔒 Locked post - unlock to view</p><button onClick={()=>unlockPost(p)} className="mt-2 bg-[#FFD700] text-black px-5 py-2 rounded-full text-xs font-black">Unlock for {p.price} 🪙</button></div>) : null}
                   <div className="px-3 pt-2 flex justify-between text-xs text-white/60"><span>❤️ {p.likes||0} likes • 💬 {comments.length} comments</span><span>{p.isLocked ? `🔒 Earned ${p.price} 🪙 per unlock` : ""}</span></div>
                   <div className="p-2 flex gap-1 border-t border-[#3A1B63]/50 mt-2">
                     <button onClick={()=>likePost(p)} className={`flex-1 py-2.5 rounded-full text-xs font-bold ${isLiked?"bg-[#FFD700] text-black":"bg-[#150826] border border-[#3A1B63]"}`}>{isLiked?"❤️ Liked":"🤍 Like"}</button>
@@ -542,17 +505,13 @@ export default function LoomiLive() {
                     <button onClick={()=>tipPost(p)} className="flex-1 bg-[#150826] border border-[#3A1B63] py-2.5 rounded-full text-xs font-bold">💎 Tip 5</button>
                     {p.isLocked && !isUnlocked && <button onClick={()=>unlockPost(p)} className="flex-1 bg-[#FFD700] text-black py-2.5 rounded-full text-xs font-black">Unlock</button>}
                   </div>
-                  {/* Comments */}
                   {openComments===p.id && (
                     <div className="px-3 pb-3 border-t border-[#3A1B63]/50">
                       <div className="max-h-[180px] overflow-y-auto mt-2 space-y-2">
                         {comments.length===0 && <p className="text-white/40 text-xs text-center py-2">No comments yet - be first! 💬</p>}
-                        {comments.map((c:any)=>(<p key={c.id} className="text-[13px]"><span className="text-[#FFD700] font-bold">@{c.user}:</span> <span className="text-white/90">{c.msg}</span></p>))}
+                        {comments.map((c:any)=>(<p key={c.id} className="text-[13px]"><span className="text-[#FFD700] font-bold" onClick={()=>setViewingProfile(c.user)}>@{c.user}:</span> <span className="text-white/90">{c.msg}</span></p>))}
                       </div>
-                      <div className="flex gap-2 mt-2">
-                        <input value={commentInput} onChange={e=>setCommentInput(e.target.value)} onKeyDown={e=>e.key==="Enter" && sendPostComment(p.id)} placeholder="Write a comment..." className="flex-1 bg-[#150826] border border-[#3A1B63] rounded-full px-3 py-2 text-xs outline-none placeholder:text-white/40" />
-                        <button onClick={()=>sendPostComment(p.id)} className="bg-[#FFD700] text-black px-4 rounded-full text-xs font-black">Send</button>
-                      </div>
+                      <div className="flex gap-2 mt-2"><input value={commentInput} onChange={e=>setCommentInput(e.target.value)} onKeyDown={e=>e.key==="Enter" && sendPostComment(p.id)} placeholder="Write a comment..." className="flex-1 bg-[#150826] border border-[#3A1B63] rounded-full px-3 py-2 text-xs outline-none placeholder:text-white/40" /><button onClick={()=>sendPostComment(p.id)} className="bg-[#FFD700] text-black px-4 rounded-full text-xs font-black">Send</button></div>
                     </div>
                   )}
                 </div>
@@ -565,20 +524,15 @@ export default function LoomiLive() {
       {tab==="discover" && (
         <div className="flex-1 bg-[#150826] overflow-y-auto pb-[70px]">
           <div className="p-3 space-y-3">
-            <div className="flex gap-2">
-              <input value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="🔍 Search @username..." className="flex-1 bg-[#241040] border border-[#3A1B63] rounded-full px-4 py-2.5 text-sm outline-none placeholder:text-white/40" />
-              {searchQuery && <button onClick={()=>setSearchQuery("")} className="bg-[#241040] border border-[#3A1B63] px-3 rounded-full text-xs">✕</button>}
-            </div>
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {categories.map(c=>(<button key={c} onClick={()=>setSelectedCategory(c)} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold ${selectedCategory===c?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{c}</button>))}
-            </div>
+            <div className="flex gap-2"><input value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="🔍 Search @username..." className="flex-1 bg-[#241040] border border-[#3A1B63] rounded-full px-4 py-2.5 text-sm outline-none placeholder:text-white/40" />{searchQuery && <button onClick={()=>setSearchQuery("")} className="bg-[#241040] border border-[#3A1B63] px-3 rounded-full text-xs">✕</button>}</div>
+            <div className="flex gap-2 overflow-x-auto pb-1">{categories.map(c=>(<button key={c} onClick={()=>setSelectedCategory(c)} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold ${selectedCategory===c?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{c}</button>))}</div>
             <p className="text-xs font-bold text-[#FFD700]">{filteredHosts.length} live in {selectedCategory} {searchQuery && `for "${searchQuery}"`}</p>
             <div className="flex gap-3 overflow-x-auto">
               <div className="text-center min-w-[56px]"><div onClick={goLive} className="w-14 h-14 rounded-full bg-[#FFD700] text-black flex items-center justify-center font-black cursor-pointer">+</div><p className="text-[11px] mt-1">Go LIVE</p></div>
               {filteredHosts.map((h:any)=>(
                 <div key={h.nickname} className="text-center min-w-[72px]">
                   <div onClick={()=>watchHost(h.nickname)} className="w-14 h-14 mx-auto rounded-full bg-red-600 border-2 border-[#FFD700] flex items-center justify-center animate-pulse cursor-pointer">🔴</div>
-                  <p className="text-[11px] mt-1 truncate w-14 mx-auto">@{h.nickname}</p>
+                  <button onClick={()=>setViewingProfile(h.nickname)} className="text-[11px] mt-1 truncate w-14 mx-auto block underline">@{h.nickname}</button>
                   <p className="text-[9px] text-white/40">{h.category || getCategoryFor(h.nickname)}</p>
                   <button onClick={()=>toggleFollow(h.nickname)} className={`mt-1 px-3 py-1 rounded-full text-[10px] font-black ${following.includes(h.nickname)?"bg-[#241040] border border-[#3A1B63] text-white/60":"bg-[#FFD700] text-black"}`}>{following.includes(h.nickname)?"Following ✓":"Follow"}</button>
                 </div>
@@ -587,14 +541,12 @@ export default function LoomiLive() {
             {filteredHosts.length===0 && <p className="text-center text-white/40 text-xs mt-2">No live in {selectedCategory} - try All</p>}
             <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-3">
               <p className="text-xs font-black">Your Category - how others find you</p>
-              <div className="flex gap-2 overflow-x-auto mt-2">
-                {categories.filter(c=>c!=="All").map(c=>(<button key={c} onClick={()=>{ setUserCategory(c); localStorage.setItem("loomi_category", c); if(authUser) updateDoc(doc(db, "loomi_users", authUser.uid), { category: c }).catch(()=>{}); }} className={`whitespace-nowrap px-3 py-1.5 rounded-full text-[11px] font-bold ${userCategory===c?"bg-[#FFD700] text-black":"bg-[#150826] border border-[#3A1B63]"}`}>{c}</button>))}
-              </div>
+              <div className="flex gap-2 overflow-x-auto mt-2">{categories.filter(c=>c!=="All").map(c=>(<button key={c} onClick={()=>{ setUserCategory(c); localStorage.setItem("loomi_category", c); if(authUser) updateDoc(doc(db, "loomi_users", authUser.uid), { category: c }).catch(()=>{}); }} className={`whitespace-nowrap px-3 py-1.5 rounded-full text-[11px] font-bold ${userCategory===c?"bg-[#FFD700] text-black":"bg-[#150826] border border-[#3A1B63]"}`}>{c}</button>))}</div>
               <p className="text-[11px] text-white/50 mt-2">You are listed as: <b className="text-[#FFD700]">{userCategory}</b></p>
             </div>
           </div>
-          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl mx-3 h-64 flex items-center justify-center text-white/40 text-sm">LIVE Preview Area</div>
-          {following.length>0 && <div className="mx-3 mt-3 bg-[#241040] border border-[#3A1B63] rounded-2xl p-3"><p className="text-xs font-black">Following ({following.length})</p>{following.map(u=><div key={u} className="flex justify-between py-2 text-sm"><span>@{u}</span><button onClick={()=>toggleFollow(u)} className="text-red-400 text-xs">Unfollow</button></div>)}</div>}
+          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl mx-3 h-64 flex items-center justify-center text-white/40 text-sm">LIVE Preview Area - Loomi-live</div>
+          {following.length>0 && <div className="mx-3 mt-3 bg-[#241040] border border-[#3A1B63] rounded-2xl p-3"><p className="text-xs font-black">Following ({following.length})</p>{following.map(u=><div key={u} className="flex justify-between py-2 text-sm"><button onClick={()=>setViewingProfile(u)} className="underline">@{u}</button><button onClick={()=>toggleFollow(u)} className="text-red-400 text-xs">Unfollow</button></div>)}</div>}
         </div>
       )}
 
@@ -605,88 +557,98 @@ export default function LoomiLive() {
             <button onClick={()=>setRankingTab("guardian")} className={`px-4 py-1.5 rounded-full text-xs font-bold ${rankingTab==="guardian"?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>Guardian</button>
           </div>
           {rankingTab==="viewers" ? (
-            <div className="flex-1 overflow-y-auto p-3">
-              {rankings.length===0 ? <p className="text-xs text-white/40 text-center mt-10">No viewers yet</p> :
-                rankings.map(r=>(<div key={r.user} className="flex items-center gap-3 py-2 border-b border-[#3A1B63]"><span className="w-6 font-black text-[#FFD700]">{r.rank}</span><div className="w-10 h-10 rounded-full bg-[#241040] border border-[#3A1B63]"></div><div className="flex-1"><p className="text-sm font-bold">@{r.user}</p></div><span className="text-sm font-bold text-[#FFD700]">{r.pts} pts</span></div>))
-              }
-            </div>
-          ) : (
-            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center"><div className="text-7xl">🦌</div><h2 className="font-black text-xl mt-3">Guardian</h2><p className="text-xs text-white/50 mt-2">The #1 sender becomes Guardian</p><button onClick={()=>sendGift(100,"🛡️")} className="mt-4 bg-[#FFD700] text-black px-6 py-3 rounded-full text-xs font-black">Send Guardian Pledge (100)</button></div>
-          )}
+            <div className="flex-1 overflow-y-auto p-3">{rankings.length===0 ? <p className="text-xs text-white/40 text-center mt-10">No viewers yet</p> : rankings.map(r=>(<div key={r.user} className="flex items-center gap-3 py-2 border-b border-[#3A1B63]"><span className="w-6 font-black text-[#FFD700]">{r.rank}</span><div onClick={()=>setViewingProfile(r.user)} className="w-10 h-10 rounded-full bg-[#241040] border border-[#3A1B63] cursor-pointer"></div><div className="flex-1"><button onClick={()=>setViewingProfile(r.user)} className="text-sm font-bold">@{r.user}</button></div><span className="text-sm font-bold text-[#FFD700]">{r.pts} pts</span></div>))}</div>
+          ) : (<div className="flex-1 flex flex-col items-center justify-center p-6 text-center"><div className="text-7xl">🦌</div><h2 className="font-black text-xl mt-3">Guardian</h2><p className="text-xs text-white/50 mt-2">The #1 sender becomes Guardian</p><button onClick={()=>sendGift(100,"🛡️")} className="mt-4 bg-[#FFD700] text-black px-6 py-3 rounded-full text-xs font-black">Send Guardian Pledge (100)</button></div>)}
         </div>
       )}
 
       {tab==="balance" && (
         <div className="flex-1 bg-[#150826] text-white p-3 space-y-3 overflow-y-auto pb-[80px]">
           <div className="bg-gradient-to-r from-[#FFD700] to-orange-500 text-black rounded-2xl p-4 flex justify-between items-center">
-            <div><p className="text-lg font-black">@{nickname}</p><p className="text-[11px] font-bold opacity-70">{userCategory} Creator • {authUser?.email}</p></div>
+            <div><button onClick={()=>setViewingProfile(nickname)} className="text-lg font-black underline">@{nickname} → Profile</button><p className="text-[11px] font-bold opacity-70">{userCategory} Creator • {authUser?.email}</p></div>
             <button onClick={shareApp} className="bg-black text-white px-3 py-2 rounded-full text-xs font-black">↗ Share</button>
           </div>
-          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl text-center py-6">
-            <p className="text-xs text-white/60">Coins Balance</p>
-            <p className="text-4xl font-black text-[#FFD700]">{keys} 🪙</p>
-            <p className="text-xs text-white/50">@{nickname} • 1 coin = R 0.27</p>
-            <div className="flex gap-2 justify-center mt-3">
-              <button onClick={()=>setShowRecharge(true)} className="bg-[#FFD700] text-black px-4 py-2 rounded-full text-xs font-black">Get Coins</button>
-              <button onClick={()=>setShowCashout(true)} className="bg-white text-black px-4 py-2 rounded-full text-xs font-black">Cash Out 💸</button>
-            </div>
-          </div>
+          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl text-center py-6"><p className="text-xs text-white/60">Coins Balance</p><p className="text-4xl font-black text-[#FFD700]">{keys} 🪙</p><p className="text-xs text-white/50">@{nickname} • 1 coin = R 0.27</p><div className="flex gap-2 justify-center mt-3"><button onClick={()=>setShowRecharge(true)} className="bg-[#FFD700] text-black px-4 py-2 rounded-full text-xs font-black">Get Coins</button><button onClick={()=>setShowCashout(true)} className="bg-white text-black px-4 py-2 rounded-full text-xs font-black">Cash Out 💸</button></div></div>
           {!dailyClaimed && <button onClick={claimDaily} className="w-full bg-[#FFD700] text-black py-3 rounded-2xl font-black text-sm animate-pulse">🎁 Claim Daily Bonus +10 🪙</button>}
           {dailyClaimed && <p className="text-center text-xs text-white/50">✅ Daily bonus claimed - come back tomorrow for +10 🪙</p>}
-          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-4">
-            <p className="text-sm font-black">Earnings Breakdown</p>
-            <div className="mt-3 space-y-2 text-sm">
-              <div className="flex justify-between"><span>⭐ Live Gifts</span><span className="text-[#FFD700] font-bold">+ {giftEarnings} 🪙</span></div>
-              <div className="flex justify-between"><span>🔒 Video Unlocks</span><span className="text-[#FFD700] font-bold">+ {unlockEarnings} 🪙</span></div>
-              <div className="flex justify-between"><span>💎 Tips</span><span className="text-[#FFD700] font-bold">+ {tipEarnings} 🪙</span></div>
-              <div className="flex justify-between"><span>👑 VIP Private</span><span className="text-[#FFD700] font-bold">+ {vipEarnings} 🪙</span></div>
-              <div className="flex justify-between border-t border-[#3A1B63] pt-2 font-black"><span>Total Earned</span><span className="text-[#FFD700]">{totalEarnings} 🪙</span></div>
-            </div>
-          </div>
-          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-4">
-            <p className="text-sm font-black">Cashout History</p>
-            {cashouts.length===0 ? <p className="text-xs text-white/50 mt-1">No cashouts yet.</p> : cashouts.map(c=>(<div key={c.id} className="flex justify-between py-2 border-b border-[#3A1B63] text-sm"><span>{c.amount} 🪙 • {c.bankName}</span><span className={`text-xs font-bold ${c.status==="pending"?"text-yellow-400":"text-green-400"}`}>{c.status}</span></div>))}
-          </div>
+          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-4"><p className="text-sm font-black">Earnings Breakdown</p><div className="mt-3 space-y-2 text-sm"><div className="flex justify-between"><span>⭐ Live Gifts</span><span className="text-[#FFD700] font-bold">+ {giftEarnings} 🪙</span></div><div className="flex justify-between"><span>🔒 Video Unlocks</span><span className="text-[#FFD700] font-bold">+ {unlockEarnings} 🪙</span></div><div className="flex justify-between"><span>💎 Tips</span><span className="text-[#FFD700] font-bold">+ {tipEarnings} 🪙</span></div><div className="flex justify-between"><span>👑 VIP Private</span><span className="text-[#FFD700] font-bold">+ {vipEarnings} 🪙</span></div><div className="flex justify-between border-t border-[#3A1B63] pt-2 font-black"><span>Total Earned</span><span className="text-[#FFD700]">{totalEarnings} 🪙</span></div></div></div>
+          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-4"><p className="text-sm font-black">Cashout History</p>{cashouts.length===0 ? <p className="text-xs text-white/50 mt-1">No cashouts yet.</p> : cashouts.map(c=>(<div key={c.id} className="flex justify-between py-2 border-b border-[#3A1B63] text-sm"><span>{c.amount} 🪙 • {c.bankName}</span><span className={`text-xs font-bold ${c.status==="pending"?"text-yellow-400":"text-green-400"}`}>{c.status}</span></div>))}</div>
           {blockedUsers.length>0 && <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-4"><p className="text-sm font-black">🛡️ Blocked Users</p>{blockedUsers.map(u=><div key={u} className="flex justify-between py-2 text-sm"><span>@{u}</span><button onClick={()=>unblockUser(u)} className="text-[#FFD700] text-xs underline">Unblock</button></div>)}</div>}
         </div>
+      )}
+
+      {/* PROFILE PAGE - OWN OR OTHER - SAME LAYOUT */}
+      {viewingProfile && (() => {
+        const profileUser = viewingProfile; const isMe = profileUser === nickname;
+        const userPosts = posts.filter(p => p.creator === profileUser);
+        const userCats = ["All", ...Array.from(new Set(userPosts.flatMap(p => { const tags = p.caption.match(/#\w+/g) || []; return tags.map(t => t.replace("#","").toLowerCase()); })))];
+        const filtered = profileCategory==="All" ? userPosts : userPosts.filter(p => p.caption.toLowerCase().includes("#"+profileCategory.toLowerCase()));
+        const totalLikes = userPosts.reduce((s,p)=>s+(p.likes||0),0);
+        return (
+          <div className="absolute inset-0 z-[105] bg-[#150826] overflow-y-auto pb-[80px]">
+            <div className="flex justify-between items-center p-3"><button onClick={()=>{ setViewingProfile(null); setProfileCategory("All"); }} className="text-xl">←</button><p className="font-black">@{profileUser}</p><span className="text-xl">⋯</span></div>
+            <div className="flex items-center gap-4 px-4">
+              <div className="w-[80px] h-[80px] rounded-full bg-gradient-to-br from-[#FFD700] to-orange-500 flex items-center justify-center text-black font-black text-3xl shrink-0">{profileUser[0]?.toUpperCase()}</div>
+              <div className="flex-1 flex justify-around text-center"><div><p className="font-black">{following.length}</p><p className="text-[11px] text-white/50">Following</p></div><div><p className="font-black">{userPosts.length}</p><p className="text-[11px] text-white/50">Posts</p></div><div><p className="font-black">{totalLikes}</p><p className="text-[11px] text-white/50">Likes</p></div></div>
+            </div>
+            <div className="px-4 mt-2"><p className="font-black text-sm">@{profileUser}</p><p className="text-xs text-white/60">{isMe ? "This is you - your profile as others see it" : `Check out @${profileUser}'s content 🔥`}</p><p className="text-xs text-white/50 mt-1">Loomi-live Creator • {userPosts.length} posts</p></div>
+            <div className="flex gap-2 px-4 mt-3">
+              {isMe ? (<><button onClick={()=>{ setViewingProfile(null); setShowPlusMenu(true); }} className="flex-1 bg-[#FFD700] text-black py-2.5 rounded-full text-xs font-black">+ Create Post</button><button onClick={()=>{ setViewingProfile(null); setTab("balance"); }} className="flex-1 bg-[#241040] border border-[#3A1B63] py-2.5 rounded-full text-xs font-bold">Wallet</button></>) : (<><button onClick={()=>toggleFollow(profileUser)} className={`flex-1 py-2.5 rounded-full text-xs font-black ${following.includes(profileUser)?"bg-[#241040] border border-[#3A1B63]":"bg-[#FFD700] text-black"}`}>{following.includes(profileUser)?"Following ✓":"Follow"}</button><button onClick={()=>{ setViewingProfile(null); setTab("live"); }} className="flex-1 bg-[#241040] border border-[#3A1B63] py-2.5 rounded-full text-xs font-bold">Message</button></>)}
+            </div>
+            <div className="flex gap-2 px-4 mt-4 overflow-x-auto pb-2">{userCats.slice(0,8).map(c=>(<button key={c} onClick={()=>setProfileCategory(c)} className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-bold capitalize ${profileCategory===c?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{c}</button>))}</div>
+            {filtered.length===0 ? (<p className="text-center text-white/40 text-xs mt-10 px-6">{isMe ? "No posts yet in this category. Tap + Create Post to add your first!" : `@${profileUser} has no posts in ${profileCategory} yet`}</p>) : (
+              <div className="grid grid-cols-3 gap-[2px] px-[2px]">{filtered.map(p=>(<div key={p.id} onClick={()=>{ setViewingProfile(null); setTab("feed"); setSearchQuery(p.creator); }} className="relative aspect-[3/4] bg-[#241040] overflow-hidden cursor-pointer">{p.mediaUrl ? (p.mediaType==="video" || p.mediaUrl.startsWith("data:video") ? <video src={p.mediaUrl} className="w-full h-full object-cover" /> : <img src={p.mediaUrl} className="w-full h-full object-cover" />) : <p className="p-2 text-[11px]">{p.caption}</p>}{p.isLocked && <span className="absolute top-1 right-1 bg-[#FFD700] text-black text-[9px] px-1 rounded-full font-black">🔒</span>}<span className="absolute bottom-1 left-1 text-[10px] bg-black/60 px-1 rounded">❤️ {p.likes||0}</span>{p.postType==="meme" && <span className="absolute top-1 left-1 text-[10px]">😂</span>}</div>))}</div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* (+) MENU - LIVE + CREATE */}
+      {showPlusMenu && (
+        <div className="absolute inset-0 z-[110] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowPlusMenu(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 space-y-3"><h2 className="font-black text-center">Create ✨ - Loomi-live</h2><button onClick={()=>{ setShowPlusMenu(false); goLive(); }} className="w-full bg-red-600 py-4 rounded-2xl font-black flex items-center justify-center gap-2">🔴 Go LIVE - Loomi-live</button><button onClick={()=>{ setShowPlusMenu(false); setCreateStep(0); setShowCreatePost(true); }} className="w-full bg-[#FFD700] text-black py-4 rounded-2xl font-black flex items-center justify-center gap-2">📹 Create Content - Post to Feed / Profile</button><button onClick={()=>setShowPlusMenu(false)} className="w-full text-white/60 text-xs py-1">Cancel</button></div></div>
       )}
 
       {showVipModal && (<div className="absolute inset-0 z-[90] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowVipModal(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 space-y-3"><h2 className="font-black text-center">👑 Request Private with @{watching}</h2><p className="text-xs text-white/60 text-center">5 minutes private 1-to-1. Coins deducted now.</p><div className="flex gap-2">{[50,100,200].map(v=><button key={v} onClick={()=>setVipPrice(v)} className={`flex-1 py-3 rounded-xl text-xs font-black ${vipPrice===v?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{v} 🪙</button>)}</div><button onClick={requestPrivate} className="w-full bg-[#FFD700] text-black py-3 rounded-full font-black">Send Request - {vipPrice} 🪙</button><button onClick={()=>setShowVipModal(false)} className="w-full text-white/60 text-xs">Cancel</button></div></div>)}
       {vipIncoming && (<div className="absolute inset-0 z-[95] flex items-center justify-center p-6"><div className="bg-[#1E0B36] border border-[#FFD700] rounded-2xl p-5 w-full text-center"><h2 className="font-black">👑 Private Request</h2><p className="text-sm mt-2">@{vipIncoming.viewer} wants Private for <b className="text-[#FFD700]">{vipIncoming.price} 🪙</b></p><p className="text-xs text-white/60">5 mins 1-to-1</p><div className="flex gap-2 mt-4"><button onClick={declineVip} className="flex-1 bg-[#241040] border border-[#3A1B63] py-3 rounded-full font-black text-xs">Decline</button><button onClick={acceptVip} className="flex-1 bg-[#FFD700] text-black py-3 rounded-full font-black text-xs">Accept</button></div></div></div>)}
 
-      {/* CREATE POST - HOT */}
+      {/* CREATE - UPLOAD > POST - 2 STEPS ONLY */}
       {showCreatePost && (
-        <div className="absolute inset-0 z-[90] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowCreatePost(false)}></div><div className="bg-[#1E0B36] border-t border-[#3A1B63] rounded-t-[24px] p-4 space-y-3 max-h-[85vh] overflow-y-auto">
-          <h2 className="font-black text-center">Create Post - Loomi-Live 🔥</h2>
-          <div className="flex gap-2">
-            <button onClick={()=>setPostType("post")} className={`flex-1 py-2.5 rounded-xl text-xs font-black ${postType==="post"?"bg-white text-black":"bg-[#241040] border border-[#3A1B63]"}`}>📝 Post</button>
-            <button onClick={()=>setPostType("video")} className={`flex-1 py-2.5 rounded-xl text-xs font-black ${postType==="video"?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>📹 Video</button>
-            <button onClick={()=>setPostType("meme")} className={`flex-1 py-2.5 rounded-xl text-xs font-black ${postType==="meme"?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>😂 Meme</button>
-          </div>
-          <textarea value={postCaption} onChange={e=>setPostCaption(e.target.value)} placeholder={postType==="meme" ? "Meme caption... 😂 e.g. When NSFAS drops #funny #meme" : postType==="video" ? "Video caption... 📹 Add #hashtags to go viral #fyp" : "What's on your mind? Add #hashtags..."} className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm outline-none placeholder:text-white/40" rows={3} />
-          <div className="flex gap-2 flex-wrap">
-            {["#fyp","#funny","#meme","#viral","#southafrica","#amapiano"].map(t=>(
-              <button key={t} onClick={()=>setPostCaption(prev=> prev.includes(t) ? prev : (prev+" "+t).trim())} className="bg-[#241040] border border-[#FFD700]/40 rounded-full px-3 py-1 text-[11px]">{t} +</button>
-            ))}
-          </div>
-          <input value={postMedia} onChange={e=>setPostMedia(e.target.value)} placeholder={postType==="video" ? "Video URL - .mp4 link" : "Image URL - paste pic / meme link"} className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm outline-none placeholder:text-white/40" />
-          <p className="text-[11px] text-white/40">Tip: Upload pic/video to imgur / catbox.moe / Google Drive (Anyone with link) then paste link here.</p>
-          <div className="flex gap-2">
-            <button onClick={()=>setPostLocked(false)} className={`flex-1 py-3 rounded-xl text-xs font-black ${!postLocked?"bg-white text-black":"bg-[#241040] border border-[#3A1B63]"}`}>FREE - Everyone sees</button>
-            <button onClick={()=>setPostLocked(true)} className={`flex-1 py-3 rounded-xl text-xs font-black ${postLocked?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>🔒 LOCKED - Earn 🪙</button>
-          </div>
-          {postLocked && <div className="flex items-center gap-2"><span className="text-xs">Price:</span><input type="number" value={postPrice} onChange={e=>setPostPrice(parseInt(e.target.value)||0)} className="flex-1 bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm" /><span className="text-xs">🪙</span></div>}
-          <button onClick={createPost} className="w-full bg-[#FFD700] text-black py-3 rounded-full font-black">Post 🔥</button>
-          <button onClick={()=>setShowCreatePost(false)} className="w-full text-white/60 text-xs">Cancel</button>
-        </div></div>
+        <div className="absolute inset-0 z-[90] bg-black flex flex-col">
+          <div className="flex justify-between items-center p-3"><button onClick={()=>setShowCreatePost(false)} className="text-xl">✕</button><p className="font-black text-sm">{createStep===0 ? "Upload" : "Post"}</p><span className="text-xs text-white/50">{createStep===0 ? "1/2" : "2/2"}</span></div>
+          {createStep===0 && (
+            <div className="flex-1 flex flex-col p-3">
+              <div className="flex-1 bg-[#1E0B36] rounded-2xl overflow-hidden flex items-center justify-center">{postMedia ? (postMedia.startsWith("data:video") || postType==="video" ? <video src={postMedia} controls className="w-full h-full object-cover" /> : <img src={postMedia} className="w-full h-full object-cover" />) : <p className="text-white/40 text-sm text-center px-6">No file yet<br/>Tap below to pick from gallery</p>}</div>
+              <input ref={fileInputRef} type="file" accept="image/*,video/*" onChange={handleFileUpload} className="hidden" />
+              <button onClick={()=>fileInputRef.current?.click()} className="w-full mt-3 bg-[#FFD700] text-black py-4 rounded-2xl font-black">{uploading ? "⏳ Uploading..." : postMedia ? "✅ Picked - Change File" : "📁 UPLOAD - Pick Pic / Video from Gallery"}</button>
+              {postMedia && <button onClick={()=>setPostMedia("")} className="w-full mt-2 bg-red-600 py-2 rounded-full text-xs font-black">✕ Remove File</button>}
+              <button onClick={()=>setCreateStep(1)} disabled={!postMedia} className="w-full mt-2 bg-white text-black py-3.5 rounded-full font-black disabled:opacity-40">Next →</button>
+            </div>
+          )}
+          {createStep===1 && (
+            <div className="flex-1 bg-[#1E0B36] overflow-y-auto p-4 space-y-3">
+              <div className="rounded-xl overflow-hidden border border-[#3A1B63]">{postMedia.startsWith("data:video") ? <video src={postMedia} controls className="w-full max-h-[220px] bg-black" /> : <img src={postMedia} className="w-full max-h-[220px] object-cover" />}</div>
+              <textarea value={postCaption} onChange={e=>setPostCaption(e.target.value)} placeholder="Add description... e.g. Best bunny chow #food / My new GTI #cars" className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm" rows={3} />
+              <div className="flex gap-2 flex-wrap">{["#food","#cars","#funny","#meme","#viral","#fyp","#amapiano","#southafrica"].map(t=>(<button key={t} onClick={()=>setPostCaption(p=>p.includes(t)?p:(p+" "+t).trim())} className="bg-[#241040] border border-[#FFD700]/40 rounded-full px-3 py-1 text-xs">{t} +</button>))}</div>
+              <div className="flex gap-2">
+                <button onClick={()=>setPostType("post")} className={`flex-1 py-2.5 rounded-xl text-xs font-black ${postType!=="video"&&postType!=="meme"?"bg-white text-black":"bg-[#241040] border border-[#3A1B63]"}`}>📝 Post</button>
+                <button onClick={()=>setPostType("video")} className={`flex-1 py-2.5 rounded-xl text-xs font-black ${postType==="video"?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>📹 Video</button>
+                <button onClick={()=>setPostType("meme")} className={`flex-1 py-2.5 rounded-xl text-xs font-black ${postType==="meme"?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>😂 Meme</button>
+              </div>
+              <div className="flex gap-2"><button onClick={()=>setPostLocked(false)} className={`flex-1 py-3 rounded-xl text-xs font-black ${!postLocked?"bg-white text-black":"bg-[#241040] border border-[#3A1B63]"}`}>FREE - Everyone sees</button><button onClick={()=>setPostLocked(true)} className={`flex-1 py-3 rounded-xl text-xs font-black ${postLocked?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>🔒 LOCKED - Earn 🪙</button></div>
+              {postLocked && <div className="flex items-center gap-2"><span className="text-xs">Price:</span><input type="number" value={postPrice} onChange={e=>setPostPrice(parseInt(e.target.value)||0)} className="flex-1 bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm" /><span>🪙</span></div>}
+              <div className="flex gap-2"><button onClick={()=>setCreateStep(0)} className="flex-1 bg-[#241040] border border-[#3A1B63] py-3 rounded-full text-xs">← Back</button><button onClick={async()=>{ await createPost(); setShowCreatePost(false); }} className="flex-1 bg-[#FFD700] text-black py-3 rounded-full font-black">Post 🔥</button></div>
+              <p className="text-[11px] text-white/40 text-center">Post shows in FEED + Your PROFILE</p>
+            </div>
+          )}
+        </div>
       )}
-      {showCashout && (<div className="absolute inset-0 z-[90] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowCashout(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 space-y-3"><h2 className="font-black text-center">💸 Cash Out - Loomi-Live</h2><p className="text-xs text-white/60 text-center">Balance: {keys} 🪙 • Min 50 • Paid weekly</p><div className="flex gap-2">{[50,100,200,500].map(v=><button key={v} onClick={()=>setCashoutAmount(v)} className={`flex-1 py-2.5 rounded-xl text-xs font-black ${cashoutAmount===v?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{v} 🪙</button>)}</div><input value={bankName} onChange={e=>setBankName(e.target.value)} placeholder="Bank - Capitec / FNB / Standard" className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm outline-none" /><input value={accountNum} onChange={e=>setAccountNum(e.target.value)} placeholder="Account Number" className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm outline-none" /><input value={accountName} onChange={e=>setAccountName(e.target.value)} placeholder="Account Name" className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm outline-none" /><button onClick={requestCashout} className="w-full bg-[#FFD700] text-black py-3 rounded-full font-black">Request {cashoutAmount} 🪙 Cashout</button><button onClick={()=>setShowCashout(false)} className="w-full text-white/60 text-xs">Cancel</button></div></div>)}
-      {showRecharge && (<div className="absolute inset-0 z-50 flex flex-col justify-end"><div className="flex-1 bg-black/60" onClick={()=>setShowRecharge(false)}></div><div className="bg-white text-black rounded-t-[24px] p-4"><h2 className="text-center font-black">Recharge - Loomi-Live</h2><div className="grid grid-cols-3 gap-2 mt-4">{[{c:5,r:"R 1,35"},{c:30,r:"R 8,09"},{c:40,r:"R 10,79"},{c:50,r:"R 13,45"},{c:70,r:"R 18,85"},{c:139,r:"R 37,39"}].map(p=><div key={p.c} onClick={()=>{ setKeys(k=>k+p.c); localStorage.setItem("loomi_keys",(keys+p.c).toString()); }} className="border rounded-xl p-3 text-center cursor-pointer"><p className="font-black">🪙 {p.c}</p><p className="text-xs">{p.r}</p></div>)}</div><button onClick={()=>setShowRecharge(false)} className="w-full mt-4 bg-black text-white py-3 rounded-full font-black">Close</button></div></div>)}
+      {showCashout && (<div className="absolute inset-0 z-[90] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowCashout(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 space-y-3"><h2 className="font-black text-center">💸 Cash Out - Loomi-live</h2><p className="text-xs text-white/60 text-center">Balance: {keys} 🪙 • Min 50 • Paid weekly</p><div className="flex gap-2">{[50,100,200,500].map(v=><button key={v} onClick={()=>setCashoutAmount(v)} className={`flex-1 py-2.5 rounded-xl text-xs font-black ${cashoutAmount===v?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{v} 🪙</button>)}</div><input value={bankName} onChange={e=>setBankName(e.target.value)} placeholder="Bank - Capitec / FNB / Standard" className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm outline-none" /><input value={accountNum} onChange={e=>setAccountNum(e.target.value)} placeholder="Account Number" className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm outline-none" /><input value={accountName} onChange={e=>setAccountName(e.target.value)} placeholder="Account Name" className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm outline-none" /><button onClick={requestCashout} className="w-full bg-[#FFD700] text-black py-3 rounded-full font-black">Request {cashoutAmount} 🪙 Cashout</button><button onClick={()=>setShowCashout(false)} className="w-full text-white/60 text-xs">Cancel</button></div></div>)}
+      {showRecharge && (<div className="absolute inset-0 z-50 flex flex-col justify-end"><div className="flex-1 bg-black/60" onClick={()=>setShowRecharge(false)}></div><div className="bg-white text-black rounded-t-[24px] p-4"><h2 className="text-center font-black">Recharge - Loomi-live</h2><div className="grid grid-cols-3 gap-2 mt-4">{[{c:5,r:"R 1,35"},{c:30,r:"R 8,09"},{c:40,r:"R 10,79"},{c:50,r:"R 13,45"},{c:70,r:"R 18,85"},{c:139,r:"R 37,39"}].map(p=><div key={p.c} onClick={()=>{ setKeys(k=>k+p.c); localStorage.setItem("loomi_keys",(keys+p.c).toString()); }} className="border rounded-xl p-3 text-center cursor-pointer"><p className="font-black">🪙 {p.c}</p><p className="text-xs">{p.r}</p></div>)}</div><button onClick={()=>setShowRecharge(false)} className="w-full mt-4 bg-black text-white py-3 rounded-full font-black">Close</button></div></div>)}
       {showDashboard && (
         <div className="absolute inset-0 z-[100] flex">
           <div className="flex-1 bg-black/60" onClick={()=>setShowDashboard(false)}></div>
           <div className="w-[78%] max-w-[320px] bg-[#150826] border-l border-[#3A1B63] h-full overflow-y-auto p-3 space-y-3">
-            <div className="flex justify-between items-center p-1"><p className="font-black text-white">@{nickname}</p><button onClick={()=>setShowDashboard(false)} className="text-white text-xl">✕</button></div>
+            <div className="flex justify-between items-center p-1"><button onClick={()=>{ setShowDashboard(false); setViewingProfile(nickname); }} className="font-black text-white">@{nickname} → Profile</button><button onClick={()=>setShowDashboard(false)} className="text-white text-xl">✕</button></div>
             <p className="text-[11px] text-white/50 px-1">{authUser?.email}</p>
             <div onClick={()=>{setTab("balance"); setShowDashboard(false);}} className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-3.5 flex justify-between items-center cursor-pointer"><div className="flex items-center gap-3"><span>🪪</span><p className="font-bold text-[14px] text-white">Balance</p></div><span className="text-white/40">›</span></div>
             <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl divide-y divide-[#3A1B63]">
@@ -708,13 +670,12 @@ export default function LoomiLive() {
       )}
       {showSafety && (<div className="absolute inset-0 z-[95] flex items-center justify-center p-6"><div className="bg-[#1E0B36] border border-red-500 rounded-2xl p-5 w-full"><h2 className="font-black text-center">🛡️ Safety - @{showSafety}</h2><p className="text-xs text-white/60 text-center mt-1">What happened?</p><div className="flex flex-col gap-2 mt-3">{["Rude / Harassment","Sexual / Nude","Spam / Scam","Hate Speech"].map(r=>(<button key={r} onClick={()=>setReportReason(r)} className={`py-2.5 rounded-xl text-xs font-bold ${reportReason===r?"bg-red-600 text-white":"bg-[#241040] border border-[#3A1B63]"}`}>{r}</button>))}</div><div className="flex gap-2 mt-4"><button onClick={()=>blockUser(showSafety)} className="flex-1 bg-[#241040] border border-[#3A1B63] py-3 rounded-full font-black text-xs">🚫 Block</button><button onClick={()=>reportUser(showSafety)} className="flex-1 bg-red-600 py-3 rounded-full font-black text-xs">🚨 Report</button></div><button onClick={()=>setShowSafety(null)} className="w-full text-white/60 text-xs mt-3">Cancel</button></div></div>)}
       {showNotifs && (<div className="absolute inset-0 z-[96] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowNotifs(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 max-h-[60vh] overflow-y-auto"><div className="flex justify-between items-center"><h2 className="font-black">🔔 Notifications</h2><button onClick={()=>{ setNotifications([]); setShowNotifs(false); }} className="text-xs text-[#FFD700] underline">Clear all</button></div>{notifications.length===0 ? <p className="text-white/50 text-xs mt-4 text-center">No notifications yet.</p> : notifications.map(n=>(<div key={n.id} onClick={()=>{ setShowNotifs(false); if(n.user && liveHosts.some((h:any)=>h.nickname===n.user)) watchHost(n.user); }} className="bg-[#241040] border border-[#3A1B63] rounded-xl p-3 mt-2 flex justify-between items-center cursor-pointer"><p className="text-sm">{n.text}</p><span className="text-[#FFD700] text-xs font-black">Watch ›</span></div>))}<button onClick={()=>setShowNotifs(false)} className="w-full mt-4 text-white/60 text-xs">Close</button></div></div>)}
-      {showWelcome && (<div className="absolute inset-0 z-[110] flex items-center justify-center p-6 bg-black/80"><div className="bg-[#1E0B36] border border-[#FFD700] rounded-3xl p-6 w-full text-center"><p className="text-[11px] tracking-[0.3em] text-[#FFD700] font-black">WELCOME TO</p><h2 className="text-2xl font-black mt-1">LOOMI-LIVE ✨</h2><p className="text-sm text-white/70 mt-2">Go LIVE, get gifts, unlock FEED, earn real money.</p><div className="text-left text-xs space-y-2 mt-4 bg-[#241040] border border-[#3A1B63] rounded-xl p-3"><p>🔴 <b>Go LIVE</b> - show yourself</p><p>🎁 <b>Send Gifts</b> - support hosts</p><p>👑 <b>VIP Private</b> - 1-to-1 for coins</p><p>🔒 <b>FEED Unlocks</b> - earn from posts</p><p>💸 <b>Cash Out</b> - Capitec / FNB</p></div><button onClick={()=>{ localStorage.setItem("loomi_seen_welcome","1"); setShowWelcome(false); }} className="w-full mt-4 bg-[#FFD700] text-black py-3 rounded-full font-black">Start Exploring 🚀</button></div></div>)}
+      {showWelcome && (<div className="absolute inset-0 z-[110] flex items-center justify-center p-6 bg-black/80"><div className="bg-[#1E0B36] border border-[#FFD700] rounded-3xl p-6 w-full text-center"><p className="text-[11px] tracking-[0.3em] text-[#FFD700] font-black">WELCOME TO</p><h2 className="text-2xl font-black mt-1">LOOMI-LIVE ✨</h2><p className="text-sm text-white/70 mt-2">Go LIVE, get gifts, unlock FEED, earn real money.</p><div className="text-left text-xs space-y-2 mt-4 bg-[#241040] border border-[#3A1B63] rounded-xl p-3"><p>🔴 <b>Go LIVE</b> - show yourself - Loomi-live</p><p>🎁 <b>Send Gifts</b> - support hosts</p><p>👑 <b>VIP Private</b> - 1-to-1 for coins</p><p>🔒 <b>FEED Unlocks</b> - earn from posts</p><p>💸 <b>Cash Out</b> - Capitec / FNB</p></div><button onClick={()=>{ localStorage.setItem("loomi_seen_welcome","1"); setShowWelcome(false); }} className="w-full mt-4 bg-[#FFD700] text-black py-3 rounded-full font-black">Start Exploring 🚀</button></div></div>)}
       {!dailyClaimed && !showWelcome && nickname && (<button onClick={claimDaily} className="absolute top-[118px] left-1/2 -translate-x-1/2 z-[80] bg-[#FFD700] text-black px-4 py-2 rounded-full text-xs font-black shadow-lg animate-bounce whitespace-nowrap">🎁 Claim Daily +10 🪙</button>)}
-      {/* BOTTOM NAV - FEED FIRST */}
       <div className="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto bg-[#150826] border-t border-[#3A1B63] flex justify-around items-center py-2.5 z-[60]">
         <button onClick={()=>setTab("feed")} className={`flex flex-col items-center ${tab==="feed"?"text-[#FFD700]":"text-white/50"}`}><span className="text-[20px]">✨</span><span className="text-[9px]">FEED</span></button>
         <button onClick={()=>setTab("live")} className={`flex flex-col items-center ${tab==="live"?"text-[#FFD700]":"text-white/50"}`}><span className="text-[20px]">🏠</span><span className="text-[9px]">LIVE</span></button>
-        <button onClick={goLive} className="bg-[#FFD700] text-black w-12 h-8 rounded-lg flex items-center justify-center font-black text-xl">+</button>
+        <button onClick={()=>setShowPlusMenu(true)} className="bg-[#FFD700] text-black w-12 h-8 rounded-lg flex items-center justify-center font-black text-xl">+</button>
         <button onClick={()=>setTab("ranking")} className={`flex flex-col items-center ${tab==="ranking"?"text-[#FFD700]":"text-white/50"}`}><span className="text-[20px]">🏆</span><span className="text-[9px]">Rankings</span></button>
         <button onClick={()=>setTab("balance")} className={`flex flex-col items-center ${tab==="balance"?"text-[#FFD700]":"text-white/50"}`}><span className="text-[20px]">👤</span><span className="text-[9px]">Wallet</span></button>
       </div>
