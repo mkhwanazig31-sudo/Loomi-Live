@@ -50,10 +50,14 @@ export default function LoomiLive() {
   const [showFloaters, setShowFloaters] = useState(true);
   const [chatError, setChatError] = useState("");
   const [camError, setCamError] = useState("");
-  // SAFETY - NEW - does not delete anything
   const [blockedUsers, setBlockedUsers] = useState<string[]>(()=>{ try{ return JSON.parse(localStorage.getItem("loomi_blocked")||"[]"); }catch{ return []; } });
   const [showSafety, setShowSafety] = useState<string | null>(null);
   const [reportReason, setReportReason] = useState("Rude / Harassment");
+  // FOLLOW + NOTIFICATIONS - NEW
+  const [following, setFollowing] = useState<string[]>(()=>{ try{ return JSON.parse(localStorage.getItem("loomi_following")||"[]"); }catch{ return []; } });
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [showNotifs, setShowNotifs] = useState(false);
+  const [notifiedLive, setNotifiedLive] = useState<Set<string>>(new Set());
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
@@ -86,6 +90,21 @@ export default function LoomiLive() {
     }, (e)=>console.log("hosts error", e));
     return () => unsubHosts();
   }, [nickname]);
+  // FOLLOW NOTIFICATION: when someone you follow goes live
+  useEffect(()=>{
+    liveHosts.forEach((h:any)=>{
+      if(following.includes(h.nickname) && !notifiedLive.has(h.nickname)){
+        setNotifiedLive(prev=>new Set(prev).add(h.nickname));
+        setNotifications(prev=>[{ id: Date.now().toString()+h.nickname, text: `@${h.nickname} is LIVE now 🔴`, user: h.nickname, time: Date.now() }, ...prev].slice(0,20));
+      }
+    });
+    // clear notified when they go offline so next live notifies again
+    setNotifiedLive(prev=>{
+      const next = new Set<string>();
+      liveHosts.forEach((h:any)=>{ if(prev.has(h.nickname)) next.add(h.nickname); });
+      return next;
+    });
+  }, [liveHosts, following]);
   useEffect(() => {
     const q = query(collection(db, "loomi_posts"), orderBy("createdAt", "desc"), limit(50));
     const unsub = onSnapshot(q, s => setPosts(s.docs.map(d => ({ id: d.id, ...d.data() } as Post))), ()=>{});
@@ -227,7 +246,6 @@ export default function LoomiLive() {
     onSnapshot(doc(db, `live_rooms/${hostNick}/viewers/${nicknameRef.current}`), async snap => { const data=snap.data() as any; if(data?.answer && pc.signalingState==="have-local-offer"){ await pc.setRemoteDescription(new RTCSessionDescription(data.answer)); } });
   };
   const stopWatching = async () => { pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear(); if(remoteRef.current) remoteRef.current.srcObject=null; remoteStreamRef.current = new MediaStream(); const w=watching; setWatching(null); try{ if(w) await deleteDoc(doc(db, `live_rooms/${w}/viewers/${nicknameRef.current}`)); }catch{} setChat([]); setFloaters([]); seenChatRef.current.clear(); setVipActive(false); setVipWith(null); };
-  // SAFETY FUNCTIONS - NEW
   const blockUser = (user: string) => {
     if(!blockedUsers.includes(user)){
       const next = [...blockedUsers, user];
@@ -248,6 +266,18 @@ export default function LoomiLive() {
     }catch(e){ console.log(e); }
     setShowSafety(null);
     alert(`Reported @${user} for ${reportReason}`);
+  };
+  // FOLLOW - NEW
+  const toggleFollow = async (user: string) => {
+    if(user===nickname) return;
+    const isFollowing = following.includes(user);
+    const next = isFollowing ? following.filter(u=>u!==user) : [...following, user];
+    setFollowing(next);
+    localStorage.setItem("loomi_following", JSON.stringify(next));
+    if(!isFollowing){
+      try{ await addDoc(collection(db, "loomi_follows"), { follower: nicknameRef.current, following: user, createdAt: serverTimestamp() }); }catch{}
+      setNotifications(prev=>[{ id: Date.now().toString(), text: `You followed @${user} ✅`, user, time: Date.now() }, ...prev].slice(0,20));
+    }
   };
   const sendChat = async () => {
     const t = input.trim();
@@ -323,7 +353,11 @@ export default function LoomiLive() {
     <div className={`min-h-screen bg-[#150826] text-white flex flex-col max-w-[430px] mx-auto relative overflow-hidden ${vipActive?"ring-4 ring-[#FFD700]":""}`}>
       <div className="flex justify-between items-center px-4 pt-3 pb-1 bg-[#150826]">
         <div><p className="text-[11px] tracking-[0.3em] text-[#FFD700] font-black leading-none">MANSION</p><h1 className="text-[22px] font-black leading-none mt-0.5">LOOMI-LIVE</h1></div>
-        <div className="flex items-center gap-2"><span className="bg-[#241040] border border-[#3A1B63] px-3 py-1.5 rounded-full text-xs font-bold">🪙 {keys}</span><button onClick={()=>setShowDashboard(true)} className="w-8 h-8 bg-[#241040] border border-[#3A1B63] rounded-full text-sm">☰</button></div>
+        <div className="flex items-center gap-2">
+          <button onClick={()=>{ setShowNotifs(true); }} className="relative w-8 h-8 bg-[#241040] border border-[#3A1B63] rounded-full text-sm">🔔{notifications.length>0 && <span className="absolute -top-1 -right-1 bg-red-500 text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-black">{notifications.length}</span>}</button>
+          <span className="bg-[#241040] border border-[#3A1B63] px-3 py-1.5 rounded-full text-xs font-bold">🪙 {keys}</span>
+          <button onClick={()=>setShowDashboard(true)} className="w-8 h-8 bg-[#241040] border border-[#3A1B63] rounded-full text-sm">☰</button>
+        </div>
       </div>
       <div className="flex justify-between items-center border-b border-[#3A1B63] bg-[#150826] px-4 overflow-x-auto">
         <div className="flex gap-5 text-[12px] font-bold whitespace-nowrap">
@@ -376,6 +410,9 @@ export default function LoomiLive() {
               </div>
               <div className="absolute top-10 left-2 bg-black/60 px-2.5 py-1 rounded-full text-[10px] z-20">Daily Ranking</div>
               <div className="absolute top-10 right-2 bg-[#FFD700] text-black px-2.5 py-1 rounded-full text-[10px] font-black z-20">{vipActive ? `👑 PRIVATE ${fmtTime(vipSeconds)}` : "Gallery 3/10"}</div>
+              {watching && (
+                <button onClick={()=>toggleFollow(watching)} className={`absolute top-16 left-2 z-20 px-3 py-1.5 rounded-full text-[11px] font-black ${following.includes(watching)?"bg-black/60 text-white":"bg-[#FFD700] text-black"}`}>{following.includes(watching)?"Following ✓":"➕ Follow @"+watching}</button>
+              )}
               {watching && !vipActive && (
                 <button onClick={()=>setShowVipModal(true)} className="absolute bottom-3 right-2 z-20 bg-[#FFD700] text-black px-3 py-2 rounded-full text-[11px] font-black shadow-lg">👑 Request Private</button>
               )}
@@ -452,11 +489,16 @@ export default function LoomiLive() {
             <div className="flex gap-3 overflow-x-auto">
               <div className="text-center min-w-[56px]"><div onClick={goLive} className="w-14 h-14 rounded-full bg-[#FFD700] text-black flex items-center justify-center font-black cursor-pointer">+</div><p className="text-[11px] mt-1">Go LIVE</p></div>
               {liveHosts.map((h:any)=>(
-                <div key={h.nickname} onClick={()=>watchHost(h.nickname)} className="text-center min-w-[56px] cursor-pointer"><div className="w-14 h-14 rounded-full bg-red-600 border-2 border-[#FFD700] flex items-center justify-center animate-pulse">🔴</div><p className="text-[11px] mt-1 truncate w-14">@{h.nickname}</p></div>
+                <div key={h.nickname} className="text-center min-w-[72px]">
+                  <div onClick={()=>watchHost(h.nickname)} className="w-14 h-14 mx-auto rounded-full bg-red-600 border-2 border-[#FFD700] flex items-center justify-center animate-pulse cursor-pointer">🔴</div>
+                  <p className="text-[11px] mt-1 truncate w-14 mx-auto">@{h.nickname}</p>
+                  <button onClick={()=>toggleFollow(h.nickname)} className={`mt-1 px-3 py-1 rounded-full text-[10px] font-black ${following.includes(h.nickname)?"bg-[#241040] border border-[#3A1B63] text-white/60":"bg-[#FFD700] text-black"}`}>{following.includes(h.nickname)?"Following ✓":"Follow"}</button>
+                </div>
               ))}
             </div>
           </div>
           <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl mx-3 h-64 flex items-center justify-center text-white/40 text-sm">LIVE Preview Area</div>
+          {following.length>0 && <div className="mx-3 mt-3 bg-[#241040] border border-[#3A1B63] rounded-2xl p-3"><p className="text-xs font-black">Following ({following.length})</p>{following.map(u=><div key={u} className="flex justify-between py-2 text-sm"><span>@{u}</span><button onClick={()=>toggleFollow(u)} className="text-red-400 text-xs">Unfollow</button></div>)}</div>}
         </div>
       )}
 
@@ -596,6 +638,18 @@ export default function LoomiLive() {
           </div>
           <button onClick={()=>setShowSafety(null)} className="w-full text-white/60 text-xs mt-3">Cancel</button>
           {blockedUsers.length>0 && <div className="mt-3 border-t border-[#3A1B63] pt-2"><p className="text-[11px] text-white/50">Blocked: {blockedUsers.join(", ")}</p><button onClick={()=>{ setBlockedUsers([]); localStorage.setItem("loomi_blocked","[]"); }} className="text-[11px] text-[#FFD700] underline">Unblock all</button></div>}
+        </div></div>
+      )}
+
+      {showNotifs && (
+        <div className="absolute inset-0 z-[96] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowNotifs(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 max-h-[60vh] overflow-y-auto">
+          <div className="flex justify-between items-center"><h2 className="font-black">🔔 Notifications</h2><button onClick={()=>{ setNotifications([]); setShowNotifs(false); }} className="text-xs text-[#FFD700] underline">Clear all</button></div>
+          {notifications.length===0 ? <p className="text-white/50 text-xs mt-4 text-center">No notifications yet. Follow someone - when they go LIVE you'll get notified here.</p> :
+          notifications.map(n=>(
+            <div key={n.id} onClick={()=>{ setShowNotifs(false); if(n.user && liveHosts.some((h:any)=>h.nickname===n.user)) watchHost(n.user); }} className="bg-[#241040] border border-[#3A1B63] rounded-xl p-3 mt-2 flex justify-between items-center cursor-pointer"><p className="text-sm">{n.text}</p><span className="text-[#FFD700] text-xs font-black">Watch ›</span></div>
+          ))}
+          {following.length>0 && <div className="mt-4"><p className="text-xs font-black text-white/60">Following ({following.length})</p>{following.map(u=><div key={u} className="flex justify-between py-2 text-sm"><span>@{u}</span><button onClick={()=>toggleFollow(u)} className="text-red-400 text-xs">Unfollow</button></div>)}</div>}
+          <button onClick={()=>setShowNotifs(false)} className="w-full mt-4 text-white/60 text-xs">Close</button>
         </div></div>
       )}
 
