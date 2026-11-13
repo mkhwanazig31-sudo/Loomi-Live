@@ -48,6 +48,7 @@ export default function LoomiLive() {
   const [giftEarnings, setGiftEarnings] = useState(0);
   const [floaters, setFloaters] = useState<Floater[]>([]);
   const [showFloaters, setShowFloaters] = useState(true);
+  const [chatError, setChatError] = useState("");
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
@@ -70,24 +71,24 @@ export default function LoomiLive() {
     const unsubHosts = onSnapshot(collection(db, "live_rooms"), s => {
       const all = s.docs.map(d => d.data() as any);
       setLiveHosts(all.filter(h=> h.isLive === true && h.nickname !== nicknameRef.current));
-    });
+    }, (e)=>console.log("hosts error", e));
     return () => unsubHosts();
   }, [nickname]);
   useEffect(() => {
     const q = query(collection(db, "loomi_posts"), orderBy("createdAt", "desc"), limit(50));
-    const unsub = onSnapshot(q, s => setPosts(s.docs.map(d => ({ id: d.id, ...d.data() } as Post))));
+    const unsub = onSnapshot(q, s => setPosts(s.docs.map(d => ({ id: d.id, ...d.data() } as Post))), ()=>{});
     return () => unsub();
   }, []);
   useEffect(() => {
     if(!nickname) return;
     const q1 = query(collection(db, "loomi_unlocks"), where("creator", "==", nickname));
-    const u1 = onSnapshot(q1, s => setUnlockEarnings(s.docs.reduce((sum,d)=>sum+((d.data() as any).amount||0),0)));
+    const u1 = onSnapshot(q1, s => setUnlockEarnings(s.docs.reduce((sum,d)=>sum+((d.data() as any).amount||0),0)), ()=>{});
     const q2 = query(collection(db, "loomi_tips"), where("creator", "==", nickname));
-    const u2 = onSnapshot(q2, s => setTipEarnings(s.docs.reduce((sum,d)=>sum+((d.data() as any).amount||0),0)));
+    const u2 = onSnapshot(q2, s => setTipEarnings(s.docs.reduce((sum,d)=>sum+((d.data() as any).amount||0),0)), ()=>{});
     const q3 = query(collection(db, "loomi_private"), where("host", "==", nickname), where("status", "==", "accepted"));
-    const u3 = onSnapshot(q3, s => setVipEarnings(s.docs.reduce((sum,d)=>sum+((d.data() as any).price||0),0)));
+    const u3 = onSnapshot(q3, s => setVipEarnings(s.docs.reduce((sum,d)=>sum+((d.data() as any).price||0),0)), ()=>{});
     const q4 = query(collection(db, "loomi_cashouts"), where("user", "==", nickname), orderBy("createdAt", "desc"), limit(20));
-    const u4 = onSnapshot(q4, s => setCashouts(s.docs.map(d=>({id:d.id, ...d.data()} as any))));
+    const u4 = onSnapshot(q4, s => setCashouts(s.docs.map(d=>({id:d.id, ...d.data()} as any))), ()=>{});
     return ()=>{ u1(); u2(); u3(); u4(); };
   }, [nickname]);
   useEffect(() => {
@@ -103,7 +104,7 @@ export default function LoomiLive() {
         if(ch.type==="modified" && d.status==="declined" && d.viewer===nickname) setVipStatus("Host declined private");
         if(ch.type==="modified" && d.status==="ended") { setVipActive(false); setVipWith(null); setVipSeconds(0); }
       });
-    });
+    }, ()=>{});
     return () => unsub();
   }, [nickname]);
   useEffect(() => {
@@ -116,14 +117,23 @@ export default function LoomiLive() {
     if (watching) return watching;
     return null;
   }, [isLive, watching, nickname]);
+
   useEffect(() => {
     setChat([]); setFloaters([]); seenChatRef.current.clear();
   }, [currentRoom]);
+
+  // CHAT - FIXED: NO orderBy + NO composite index needed, sort in JS, show error if blocked
   useEffect(() => {
     if (!currentRoom) { setChat([]); setFloaters([]); return; }
-    const q = query(collection(db, "live_chat"), where("room", "==", currentRoom), orderBy("createdAt", "asc"), limit(100));
+    // Simple query only - no orderBy, so no index needed
+    const q = query(collection(db, "live_chat"), where("room", "==", currentRoom), limit(100));
     const unsub = onSnapshot(q, s => {
-      const msgs = s.docs.map(d => d.data());
+      setChatError("");
+      // sort locally by createdAt - works even if timestamp is null
+      const msgs = s.docs.map(d => ({ id: d.id, ...d.data() } as any)).sort((a,b)=>{
+        const ta = a.createdAt?.seconds || 0; const tb = b.createdAt?.seconds || 0;
+        return ta - tb;
+      });
       setChat(msgs);
       s.docChanges().forEach(change => {
         if(change.type==="added"){
@@ -136,9 +146,13 @@ export default function LoomiLive() {
           }
         }
       });
+    }, (err)=>{
+      console.log("CHAT LISTEN ERROR:", err);
+      setChatError("Chat blocked by Firebase Rules - paste firestore.rules file");
     });
     return () => unsub();
   }, [currentRoom]);
+
   useEffect(()=>{ chatEndRef.current?.scrollIntoView({behavior:"smooth"}) },[chat]);
   const addFloater = (user: string, msg: string) => {
     const colors = ["#FFD700","#fff","#FF6B9D","#7CFFB2","#7CC7FF"];
@@ -183,19 +197,28 @@ export default function LoomiLive() {
     onSnapshot(doc(db, `live_rooms/${hostNick}/viewers/${nicknameRef.current}`), async snap => { const data=snap.data() as any; if(data?.answer && pc.signalingState==="have-local-offer"){ await pc.setRemoteDescription(new RTCSessionDescription(data.answer)); } });
   };
   const stopWatching = async () => { pcsRef.current.forEach(pc=>pc.close()); pcsRef.current.clear(); if(remoteRef.current) remoteRef.current.srcObject=null; remoteStreamRef.current = new MediaStream(); const w=watching; setWatching(null); try{ if(w) await deleteDoc(doc(db, `live_rooms/${w}/viewers/${nicknameRef.current}`)); }catch{} setChat([]); setFloaters([]); seenChatRef.current.clear(); setVipActive(false); setVipWith(null); };
+
+  // SEND CHAT - LOCAL FIRST: shows instantly, then saves to Firebase
   const sendChat = async () => {
     const t = input.trim();
     if(!t) return;
     const room = currentRoom || (isLive ? nickname : watching);
     if(!room) return alert("Go LIVE or watch someone first to comment");
+    const myUser = nicknameRef.current || nickname;
     setInput("");
+    // 1. Show instantly locally - no waiting for Firebase
+    const localMsg = { id: "local-"+Date.now(), room, user: myUser, msg: t, createdAt: { seconds: Date.now()/1000 } };
+    setChat(prev => [...prev, localMsg]);
+    addFloater(myUser, t);
+    // 2. Try save to Firebase for other viewers
     try {
-      await addDoc(collection(db,"live_chat"), { room, user: nicknameRef.current || nickname, msg: t, createdAt: serverTimestamp() });
+      await addDoc(collection(db,"live_chat"), { room, user: myUser, msg: t, createdAt: serverTimestamp(), ts: Date.now() });
     } catch(e:any) {
-      alert("Chat failed: " + (e.message || "check Firestore rules"));
+      console.log("CHAT SAVE ERROR:", e);
+      setChatError("Saved locally only - check Firestore Rules");
     }
   };
-  const sendGift = async (cost:number, emoji:string) => { if(!currentRoom) return alert("Go live or watch first"); if(keys < cost) { setShowRecharge(true); return; } if(cost>0){ const newKeys = keys - cost; setKeys(newKeys); localStorage.setItem("loomi_keys", newKeys.toString()); } triggerGift(emoji); await addDoc(collection(db,"live_chat"), { room: currentRoom, user:nicknameRef.current, msg:`sent ${emoji}`, gift:emoji, cost, createdAt: serverTimestamp() }); };
+  const sendGift = async (cost:number, emoji:string) => { if(!currentRoom) return alert("Go live or watch first"); if(keys < cost) { setShowRecharge(true); return; } if(cost>0){ const newKeys = keys - cost; setKeys(newKeys); localStorage.setItem("loomi_keys", newKeys.toString()); } triggerGift(emoji); try{ await addDoc(collection(db,"live_chat"), { room: currentRoom, user:nicknameRef.current, msg:`sent ${emoji}`, gift:emoji, cost, createdAt: serverTimestamp(), ts: Date.now() }); }catch{} };
   const createPost = async () => {
     if(!postCaption.trim() && !postMedia.trim()) return alert("Add caption or media");
     await addDoc(collection(db, "loomi_posts"), { creator: nicknameRef.current, caption: postCaption.trim(), mediaUrl: postMedia.trim(), isLocked: postLocked, price: postLocked ? postPrice : 0, likes: 0, unlockedBy: [], createdAt: serverTimestamp() });
@@ -317,8 +340,10 @@ export default function LoomiLive() {
             </div>
           )}
         </div>
+        {chatError && <div className="bg-red-600/90 px-3 py-1.5 text-[11px] text-center">{chatError}</div>}
         <div className="bg-[#150826] p-2 h-[20vh] overflow-y-auto space-y-1">
-          {chat.map((c,i)=><p key={i} className="text-[13px]"><span className="text-[#FFD700] font-bold">@{c.user}:</span> <span className="text-white/90">{c.msg}</span></p>)}
+          {chat.length===0 && <p className="text-white/30 text-xs text-center pt-2">No comments yet - be first! 💬</p>}
+          {chat.map((c,i)=><p key={c.id || i} className="text-[13px]"><span className="text-[#FFD700] font-bold">@{c.user}:</span> <span className="text-white/90">{c.msg}</span></p>)}
           <div ref={chatEndRef} />
         </div>
         <div className="bg-[#241040] border-t border-[#3A1B63] p-2 flex gap-2 overflow-x-auto relative z-30">
