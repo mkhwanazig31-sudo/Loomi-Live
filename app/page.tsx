@@ -28,7 +28,6 @@ export default function LoomiLive() {
   const [postMedia, setPostMedia] = useState("");
   const [postLocked, setPostLocked] = useState(false);
   const [postPrice, setPostPrice] = useState(20);
-  // VIP PRIVATE - Feature 2
   const [showVipModal, setShowVipModal] = useState(false);
   const [vipPrice, setVipPrice] = useState(100);
   const [vipActive, setVipActive] = useState(false);
@@ -36,6 +35,17 @@ export default function LoomiLive() {
   const [vipSeconds, setVipSeconds] = useState(0);
   const [vipIncoming, setVipIncoming] = useState<any | null>(null);
   const [vipStatus, setVipStatus] = useState("");
+  // WALLET + CASHOUT - Feature 3
+  const [showCashout, setShowCashout] = useState(false);
+  const [cashoutAmount, setCashoutAmount] = useState(100);
+  const [bankName, setBankName] = useState("Capitec");
+  const [accountNum, setAccountNum] = useState("");
+  const [accountName, setAccountName] = useState("");
+  const [cashouts, setCashouts] = useState<any[]>([]);
+  const [unlockEarnings, setUnlockEarnings] = useState(0);
+  const [tipEarnings, setTipEarnings] = useState(0);
+  const [vipEarnings, setVipEarnings] = useState(0);
+  const [giftEarnings, setGiftEarnings] = useState(0);
   
   const videoRef = useRef<HTMLVideoElement>(null);
   const remoteRef = useRef<HTMLVideoElement>(null);
@@ -65,7 +75,19 @@ export default function LoomiLive() {
     const unsub = onSnapshot(q, s => setPosts(s.docs.map(d => ({ id: d.id, ...d.data() } as Post))));
     return () => unsub();
   }, []);
-  // VIP LISTENER - incoming requests for host + status for viewer
+  // WALLET LISTENERS - earnings + cashouts
+  useEffect(() => {
+    if(!nickname) return;
+    const q1 = query(collection(db, "loomi_unlocks"), where("creator", "==", nickname));
+    const u1 = onSnapshot(q1, s => setUnlockEarnings(s.docs.reduce((sum,d)=>sum+((d.data() as any).amount||0),0)));
+    const q2 = query(collection(db, "loomi_tips"), where("creator", "==", nickname));
+    const u2 = onSnapshot(q2, s => setTipEarnings(s.docs.reduce((sum,d)=>sum+((d.data() as any).amount||0),0)));
+    const q3 = query(collection(db, "loomi_private"), where("host", "==", nickname), where("status", "==", "accepted"));
+    const u3 = onSnapshot(q3, s => setVipEarnings(s.docs.reduce((sum,d)=>sum+((d.data() as any).price||0),0)));
+    const q4 = query(collection(db, "loomi_cashouts"), where("user", "==", nickname), orderBy("createdAt", "desc"), limit(20));
+    const u4 = onSnapshot(q4, s => setCashouts(s.docs.map(d=>({id:d.id, ...d.data()} as any))));
+    return ()=>{ u1(); u2(); u3(); u4(); };
+  }, [nickname]);
   useEffect(() => {
     if(!nickname) return;
     const q = query(collection(db, "loomi_private"), where("host", "==", nickname));
@@ -82,7 +104,6 @@ export default function LoomiLive() {
     });
     return () => unsub();
   }, [nickname]);
-  // VIP TIMER
   useEffect(() => {
     if(!vipActive) return;
     const t = setInterval(()=>{ setVipSeconds(s=>{ if(s<=1){ endVip(); return 0; } return s-1; }); },1000);
@@ -158,7 +179,6 @@ export default function LoomiLive() {
   };
   const likePost = async (p: Post) => { await updateDoc(doc(db, "loomi_posts", p.id), { likes: (p.likes||0)+1 }); };
   const tipPost = async (p: Post) => { await sendGift(5, "💎"); await addDoc(collection(db, "loomi_tips"), { sender: nicknameRef.current, creator: p.creator, postId: p.id, amount: 5, createdAt: serverTimestamp() }); };
-  // VIP ACTIONS
   const requestPrivate = async () => {
     if(!watching) return alert("Watch someone first");
     if(keys < vipPrice){ setShowRecharge(true); return; }
@@ -173,15 +193,21 @@ export default function LoomiLive() {
   };
   const declineVip = async () => {
     if(!vipIncoming) return;
-    // refund viewer logic is in UI - host declines, viewer keeps status
     await updateDoc(doc(db, "loomi_private", vipIncoming.id), { status: "declined" });
     setVipIncoming(null);
   };
   const endVip = async () => {
     setVipActive(false); setVipWith(null); setVipSeconds(0);
-    // mark any active private as ended
     const q = query(collection(db, "loomi_private"), where("host", "==", nicknameRef.current), where("status", "==", "accepted"));
     const snap = await getDocs(q); for(const d of snap.docs) await updateDoc(d.ref, { status: "ended" });
+  };
+  // CASHOUT
+  const totalEarnings = unlockEarnings + tipEarnings + vipEarnings + giftEarnings;
+  const requestCashout = async () => {
+    if(cashoutAmount < 50) return alert("Min 50 coins to cashout");
+    if(!accountNum.trim() || !accountName.trim()) return alert("Add bank details");
+    await addDoc(collection(db, "loomi_cashouts"), { user: nicknameRef.current, amount: cashoutAmount, bankName, accountNum, accountName, status: "pending", createdAt: serverTimestamp() });
+    setShowCashout(false); alert("Cashout request sent! Paid weekly.");
   };
   const rankings = useMemo(()=>{ const map:Record<string,number>={}; chat.forEach((c:any)=>{ if(c.gift) map[c.user]=(map[c.user]||0)+(c.cost||1); }); return Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([user,pts],i)=>({user,pts,rank:i+1})); },[chat]);
   const fmtTime = (s:number) => `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
@@ -204,7 +230,7 @@ export default function LoomiLive() {
           <button onClick={()=>setTab("feed")} className={`py-3 ${tab==="feed"?"border-b-2 border-[#FFD700] text-white":"text-white/50"}`}>FEED ✨</button>
           <button onClick={()=>setTab("discover")} className={`py-3 ${tab==="discover"?"border-b-2 border-[#FFD700]":"text-white/50"}`}>Discover</button>
           <button onClick={()=>setTab("ranking")} className={`py-3 ${tab==="ranking"?"border-b-2 border-[#FFD700]":"text-white/50"}`}>Rankings</button>
-          <button onClick={()=>setTab("balance")} className={`py-3 ${tab==="balance"?"border-b-2 border-[#FFD700]":"text-white/50"}`}>Balance</button>
+          <button onClick={()=>setTab("balance")} className={`py-3 ${tab==="balance"?"border-b-2 border-[#FFD700]":"text-white/50"}`}>Wallet</button>
         </div>
       </div>
 
@@ -213,7 +239,6 @@ export default function LoomiLive() {
         <button onClick={()=>{ localStorage.clear(); location.reload(); }} className="bg-[#241040] border border-[#3A1B63] px-3 py-1 rounded-full text-white/70">Logout</button>
       </div>
 
-      {/* VIP BANNER */}
       {vipActive && (
         <div className="bg-[#FFD700] text-black px-3 py-2 flex justify-between items-center text-xs font-black z-30">
           <span>👑 PRIVATE with @{vipWith} • {fmtTime(vipSeconds)}</span>
@@ -237,7 +262,6 @@ export default function LoomiLive() {
               </div>
               <div className="absolute top-10 left-2 bg-black/60 px-2.5 py-1 rounded-full text-[10px] z-20">Daily Ranking</div>
               <div className="absolute top-10 right-2 bg-[#FFD700] text-black px-2.5 py-1 rounded-full text-[10px] font-black z-20">{vipActive ? `👑 PRIVATE ${fmtTime(vipSeconds)}` : "Gallery 3/10"}</div>
-              {/* VIP REQUEST BUTTON - only for viewer */}
               {watching && !vipActive && (
                 <button onClick={()=>setShowVipModal(true)} className="absolute bottom-3 right-2 z-20 bg-[#FFD700] text-black px-3 py-2 rounded-full text-[11px] font-black shadow-lg">👑 Request Private</button>
               )}
@@ -342,15 +366,37 @@ export default function LoomiLive() {
         </div>
       )}
 
+      {/* WALLET + CASHOUT - NEW */}
       {tab==="balance" && (
-        <div className="flex-1 bg-[#150826] text-white p-3 space-y-3 overflow-y-auto pb-[70px]">
-          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl text-center py-6"><p className="text-xs text-white/60">Estimated balance</p><p className="text-4xl font-black text-[#FFD700]">{keys} 🪙</p><p className="text-xs text-white/50">ZAR 0.00</p></div>
-          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-4 flex justify-between items-center"><div><p className="text-sm font-bold">Coins</p><p className="text-xs text-white/50">@{nickname}</p></div><button onClick={()=>setShowRecharge(true)} className="text-xs bg-[#FFD700] text-black px-3 py-1.5 rounded-full font-black">Get Coins</button></div>
-          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-4"><p className="text-sm font-bold">Transactions</p><p className="text-xs text-white/50 mt-1">Purchase of Coins: will show here</p></div>
+        <div className="flex-1 bg-[#150826] text-white p-3 space-y-3 overflow-y-auto pb-[80px]">
+          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl text-center py-6">
+            <p className="text-xs text-white/60">Coins Balance</p>
+            <p className="text-4xl font-black text-[#FFD700]">{keys} 🪙</p>
+            <p className="text-xs text-white/50">@{nickname} • 1 coin = R 0.27</p>
+            <div className="flex gap-2 justify-center mt-3">
+              <button onClick={()=>setShowRecharge(true)} className="bg-[#FFD700] text-black px-4 py-2 rounded-full text-xs font-black">Get Coins</button>
+              <button onClick={()=>setShowCashout(true)} className="bg-white text-black px-4 py-2 rounded-full text-xs font-black">Cash Out 💸</button>
+            </div>
+          </div>
+          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-4">
+            <p className="text-sm font-black">Earnings Breakdown</p>
+            <div className="mt-3 space-y-2 text-sm">
+              <div className="flex justify-between"><span>⭐ Live Gifts</span><span className="text-[#FFD700] font-bold">+ {giftEarnings} 🪙</span></div>
+              <div className="flex justify-between"><span>🔒 Video Unlocks</span><span className="text-[#FFD700] font-bold">+ {unlockEarnings} 🪙</span></div>
+              <div className="flex justify-between"><span>💎 Tips</span><span className="text-[#FFD700] font-bold">+ {tipEarnings} 🪙</span></div>
+              <div className="flex justify-between"><span>👑 VIP Private</span><span className="text-[#FFD700] font-bold">+ {vipEarnings} 🪙</span></div>
+              <div className="flex justify-between border-t border-[#3A1B63] pt-2 font-black"><span>Total Earned</span><span className="text-[#FFD700]">{totalEarnings} 🪙</span></div>
+            </div>
+          </div>
+          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-4">
+            <p className="text-sm font-black">Cashout History</p>
+            {cashouts.length===0 ? <p className="text-xs text-white/50 mt-1">No cashouts yet. Tap Cash Out to request.</p> : cashouts.map(c=>(
+              <div key={c.id} className="flex justify-between py-2 border-b border-[#3A1B63] text-sm"><span>{c.amount} 🪙 • {c.bankName}</span><span className={`text-xs font-bold ${c.status==="pending"?"text-yellow-400":"text-green-400"}`}>{c.status}</span></div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* VIP MODALS */}
       {showVipModal && (
         <div className="absolute inset-0 z-[90] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowVipModal(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 space-y-3">
           <h2 className="font-black text-center">👑 Request Private with @{watching}</h2><p className="text-xs text-white/60 text-center">5 minutes private 1-to-1. Coins deducted now.</p>
@@ -375,6 +421,20 @@ export default function LoomiLive() {
           {postLocked && <div className="flex items-center gap-2"><span className="text-xs">Price:</span><input type="number" value={postPrice} onChange={e=>setPostPrice(parseInt(e.target.value)||0)} className="flex-1 bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm" /><span className="text-xs">🪙</span></div>}
           <button onClick={createPost} className="w-full bg-[#FFD700] text-black py-3 rounded-full font-black">Post</button>
           <button onClick={()=>setShowCreatePost(false)} className="w-full text-white/60 text-xs">Cancel</button>
+        </div></div>
+      )}
+
+      {/* CASHOUT MODAL */}
+      {showCashout && (
+        <div className="absolute inset-0 z-[90] flex flex-col justify-end"><div className="flex-1 bg-black/70" onClick={()=>setShowCashout(false)}></div><div className="bg-[#1E0B36] border-t border-[#FFD700] rounded-t-[24px] p-4 space-y-3">
+          <h2 className="font-black text-center">💸 Cash Out - Loomi-Live</h2>
+          <p className="text-xs text-white/60 text-center">Balance: {keys} 🪙 • Min 50 • Paid weekly</p>
+          <div className="flex gap-2">{[50,100,200,500].map(v=><button key={v} onClick={()=>setCashoutAmount(v)} className={`flex-1 py-2.5 rounded-xl text-xs font-black ${cashoutAmount===v?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>{v} 🪙</button>)}</div>
+          <input value={bankName} onChange={e=>setBankName(e.target.value)} placeholder="Bank - Capitec / FNB / Standard" className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm outline-none" />
+          <input value={accountNum} onChange={e=>setAccountNum(e.target.value)} placeholder="Account Number" className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm outline-none" />
+          <input value={accountName} onChange={e=>setAccountName(e.target.value)} placeholder="Account Name" className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm outline-none" />
+          <button onClick={requestCashout} className="w-full bg-[#FFD700] text-black py-3 rounded-full font-black">Request {cashoutAmount} 🪙 Cashout</button>
+          <button onClick={()=>setShowCashout(false)} className="w-full text-white/60 text-xs">Cancel</button>
         </div></div>
       )}
 
@@ -410,7 +470,7 @@ export default function LoomiLive() {
         <button onClick={()=>setTab("feed")} className={`flex flex-col items-center ${tab==="feed"?"text-[#FFD700]":"text-white/50"}`}><span className="text-[20px]">✨</span><span className="text-[9px]">FEED</span></button>
         <button onClick={goLive} className="bg-[#FFD700] text-black w-12 h-8 rounded-lg flex items-center justify-center font-black text-xl">+</button>
         <button onClick={()=>setTab("ranking")} className={`flex flex-col items-center ${tab==="ranking"?"text-[#FFD700]":"text-white/50"}`}><span className="text-[20px]">🏆</span><span className="text-[9px]">Rankings</span></button>
-        <button onClick={()=>setTab("balance")} className={`flex flex-col items-center ${tab==="balance"?"text-[#FFD700]":"text-white/50"}`}><span className="text-[20px]">👤</span><span className="text-[9px]">Balance</span></button>
+        <button onClick={()=>setTab("balance")} className={`flex flex-col items-center ${tab==="balance"?"text-[#FFD700]":"text-white/50"}`}><span className="text-[20px]">👤</span><span className="text-[9px]">Wallet</span></button>
       </div>
 
       <style>{`
