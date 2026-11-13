@@ -105,29 +105,33 @@ export default function LoomiLive() {
   const rankings = useMemo(()=>{ const map:Record<string,number>={}; chat.forEach((c:any)=>{ if(c.gift) map[c.user]=(map[c.user]||0)+(c.cost||1); }); return Object.entries(map).sort((a,b)=>b[1]-a[1]).map(([user,pts],i)=>({user,pts,rank:i+1})); },[chat]);
 
   if(!nickname) return (
-    <div className="min-h-screen bg-black text-white flex items-center justify-center max-w-[430px] mx-auto p-6">
-      <div className="w-full"><h1 className="text-[32px] font-black">Loomi ✨ Username</h1><p className="text-xs text-zinc-500 mt-1">Will appear in LIVE, rankings, balance</p><input value={tempNick} onChange={e=>setTempNick(e.target.value)} placeholder="your name" className="w-full mt-6 bg-zinc-900 border border-zinc-800 rounded-2xl p-4" /><button onClick={saveNickname} className="w-full mt-4 bg-white text-black py-4 rounded-2xl font-black">Continue</button></div>
+    <div className="min-h-screen bg-[#150826] text-white flex items-center justify-center max-w-[430px] mx-auto p-6">
+      <div className="w-full text-center"><p className="text-[11px] tracking-[0.3em] text-[#FFD700] font-black">LOOMI-LIVE</p><h1 className="text-[32px] font-black mt-2">Loomi ✨ Username</h1><p className="text-xs text-white/50 mt-1">Will appear in LIVE, rankings, balance</p><input value={tempNick} onChange={e=>setTempNick(e.target.value)} placeholder="your name" className="w-full mt-6 bg-[#241040] border border-[#3A1B63] rounded-2xl p-4 text-white placeholder:text-white/40 outline-none focus:border-[#FFD700]" /><button onClick={saveNickname} className="w-full mt-4 bg-[#FFD700] text-black py-4 rounded-2xl font-black">Continue</button></div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col max-w-[430px] mx-auto relative overflow-hidden">
-      <div className="flex justify-between items-center border-b border-zinc-800 bg-black px-3">
-        <div className="flex gap-4 text-[12px] font-bold">
-          <button onClick={()=>setTab("live")} className={`py-3 ${tab==="live"?"border-b-2 border-white text-white":"text-zinc-500"}`}>LIVE</button>
-          <button onClick={()=>setTab("discover")} className={`py-3 ${tab==="discover"?"border-b-2 border-white":"text-zinc-500"}`}>Discover</button>
-          <button onClick={()=>setTab("ranking")} className={`py-3 ${tab==="ranking"?"border-b-2 border-white":"text-zinc-500"}`}>Rankings</button>
-          <button onClick={()=>setTab("balance")} className={`py-3 ${tab==="balance"?"border-b-2 border-white":"text-zinc-500"}`}>Balance</button>
+    <div className="min-h-screen bg-[#150826] text-white flex flex-col max-w-[430px] mx-auto relative overflow-hidden">
+      {/* LOOMI-LIVE HEADER - like mockup */}
+      <div className="flex justify-between items-center px-4 pt-3 pb-1 bg-[#150826]">
+        <div><p className="text-[11px] tracking-[0.3em] text-[#FFD700] font-black leading-none">MANSION</p><h1 className="text-[22px] font-black leading-none mt-0.5">LOOMI-LIVE</h1></div>
+        <div className="flex items-center gap-2"><span className="bg-[#241040] border border-[#3A1B63] px-3 py-1.5 rounded-full text-xs font-bold">🪙 {keys}</span><button onClick={()=>setShowDashboard(true)} className="w-8 h-8 bg-[#241040] border border-[#3A1B63] rounded-full text-sm">☰</button></div>
+      </div>
+      <div className="flex justify-between items-center border-b border-[#3A1B63] bg-[#150826] px-4">
+        <div className="flex gap-5 text-[12px] font-bold">
+          <button onClick={()=>setTab("live")} className={`py-3 ${tab==="live"?"border-b-2 border-[#FFD700] text-white":"text-white/50"}`}>LIVE</button>
+          <button onClick={()=>setTab("discover")} className={`py-3 ${tab==="discover"?"border-b-2 border-[#FFD700]":"text-white/50"}`}>Discover</button>
+          <button onClick={()=>setTab("ranking")} className={`py-3 ${tab==="ranking"?"border-b-2 border-[#FFD700]":"text-white/50"}`}>Rankings</button>
+          <button onClick={()=>setTab("balance")} className={`py-3 ${tab==="balance"?"border-b-2 border-[#FFD700]":"text-white/50"}`}>Balance</button>
         </div>
-        <button onClick={()=>setShowDashboard(true)} className="text-xl">☰</button>
       </div>
 
-      <div className="flex justify-between items-center p-2 bg-black text-xs">
-        <span className="font-black">@{nickname}</span>
-        <div className="flex gap-2"><span className="bg-zinc-800 px-2 py-1 rounded-full">🪙 {keys}</span><button onClick={()=>{ localStorage.clear(); location.reload(); }} className="bg-zinc-800 px-2 py-1 rounded-full">Logout</button></div>
+      <div className="flex justify-between items-center px-4 py-2 bg-[#150826] text-xs">
+        <span className="font-black">@{nickname} <span className="text-[#FFD700] text-[10px]">• LIVE</span></span>
+        <button onClick={()=>{ localStorage.clear(); location.reload(); }} className="bg-[#241040] border border-[#3A1B63] px-3 py-1 rounded-full text-white/70">Logout</button>
       </div>
 
-      <div className={`relative bg-zinc-900 w-full overflow-hidden ${tab==="live" ? "flex-1 flex flex-col pb-[70px]" : "hidden"}`}>
+      <div className={`relative bg-[#1E0B36] w-full overflow-hidden ${tab==="live" ? "flex-1 flex flex-col pb-[70px]" : "hidden"}`}>
         <div className="relative flex-1 aspect-[9/14] overflow-hidden">
           <video ref={videoRef} autoPlay muted playsInline className={`w-full h-full object-cover ${isLive ? "block" : "hidden"}`} />
           <video ref={remoteRef} autoPlay playsInline className={`w-full h-full object-cover bg-black ${watching ? "block" : "hidden"}`} />
@@ -137,119 +141,119 @@ export default function LoomiLive() {
           {(isLive || watching) && (
             <>
               <div className="absolute top-2 left-2 right-2 flex justify-between z-20">
-                <div className="bg-black/60 px-2 py-1 rounded-full text-xs flex items-center gap-1">@{watching||nickname} ❤️ {chat.length}</div>
-                <div className="flex gap-1"><div className="bg-black/60 px-2 py-1 rounded-full text-xs">{liveHosts.length+1} viewers</div><button onClick={()=> isLive ? stopLive() : stopWatching()} className="bg-black/60 w-6 h-6 rounded-full flex items-center justify-center">✕</button></div>
+                <div className="bg-black/60 backdrop-blur px-2.5 py-1 rounded-full text-xs flex items-center gap-1">🔴 @{watching||nickname} ❤️ {chat.length}</div>
+                <div className="flex gap-1"><div className="bg-black/60 backdrop-blur px-2.5 py-1 rounded-full text-xs">{liveHosts.length+1} viewers</div><button onClick={()=> isLive ? stopLive() : stopWatching()} className="bg-black/60 w-6 h-6 rounded-full flex items-center justify-center">✕</button></div>
               </div>
-              <div className="absolute top-10 left-2 bg-black/60 px-2 py-0.5 rounded-full text-[10px] z-20">Daily Ranking</div>
-              <div className="absolute top-10 right-2 bg-blue-600/80 px-2 py-0.5 rounded-full text-[10px] z-20">Gallery 3/10</div>
+              <div className="absolute top-10 left-2 bg-black/60 px-2.5 py-1 rounded-full text-[10px] z-20">Daily Ranking</div>
+              <div className="absolute top-10 right-2 bg-[#FFD700] text-black px-2.5 py-1 rounded-full text-[10px] font-black z-20">Gallery 3/10</div>
             </>
           )}
           {!isLive && !watching && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-b from-zinc-900 to-black z-10">
-              <button onClick={goLive} className="bg-white text-black px-10 py-4 rounded-full font-black text-lg">🔴 GO LIVE</button>
-              <p className="mt-3 text-zinc-500 text-xs">{liveHosts.length} live now</p>
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-b from-[#1E0B36] to-black z-10">
+              <p className="text-[11px] tracking-[0.25em] text-[#FFD700] font-black mb-2">LOOMI-LIVE</p>
+              <button onClick={goLive} className="bg-[#FFD700] text-black px-10 py-4 rounded-full font-black text-lg shadow-[0_0_30px_rgba(255,215,0,0.4)]">🔴 GO LIVE</button>
+              <p className="mt-3 text-white/50 text-xs">{liveHosts.length} live now</p>
             </div>
           )}
         </div>
-        <div className="bg-black p-2 h-[20vh] overflow-y-auto space-y-1">
-          {chat.map((c,i)=><p key={i} className="text-[13px]"><span className="text-zinc-500 font-bold">@{c.user}:</span> {c.msg}</p>)}
+        <div className="bg-[#150826] p-2 h-[20vh] overflow-y-auto space-y-1">
+          {chat.map((c,i)=><p key={i} className="text-[13px]"><span className="text-[#FFD700] font-bold">@{c.user}:</span> <span className="text-white/90">{c.msg}</span></p>)}
           <div ref={chatEndRef} />
         </div>
-        <div className="bg-zinc-900 border-t border-zinc-800 p-2 flex gap-2 overflow-x-auto relative z-30">
-          <button onClick={()=>sendGift(0,"❤️")} className="min-w-[64px] bg-zinc-800 rounded-xl py-2 text-xs font-bold active:scale-95">❤️<br/>FREE</button>
-          <button onClick={()=>sendGift(1,"🌹")} className="min-w-[64px] bg-zinc-800 rounded-xl py-2 text-xs font-bold active:scale-95">🌹<br/>1 🪙</button>
-          <button onClick={()=>sendGift(5,"🚀")} className="min-w-[64px] bg-zinc-800 rounded-xl py-2 text-xs font-bold active:scale-95">🚀<br/>5 🪙</button>
-          <button onClick={()=>sendGift(10,"👑")} className="min-w-[64px] bg-zinc-800 rounded-xl py-2 text-xs font-bold active:scale-95">👑<br/>10</button>
-          <button onClick={()=>sendGift(50,"💎")} className="min-w-[64px] bg-purple-600 rounded-xl py-2 text-xs font-bold active:scale-95">💎<br/>50</button>
+        {/* GIFT BAR - mockup style */}
+        <div className="bg-[#241040] border-t border-[#3A1B63] p-2 flex gap-2 overflow-x-auto relative z-30">
+          <button onClick={()=>sendGift(0,"❤️")} className="min-w-[64px] bg-[#150826] border border-[#3A1B63] rounded-xl py-2 text-xs font-bold active:scale-95">❤️<br/><span className="text-white/60">FREE</span></button>
+          <button onClick={()=>sendGift(1,"🌹")} className="min-w-[64px] bg-[#150826] border border-[#3A1B63] rounded-xl py-2 text-xs font-bold active:scale-95">🌹<br/>1 🪙</button>
+          <button onClick={()=>sendGift(5,"🚀")} className="min-w-[64px] bg-[#150826] border border-[#3A1B63] rounded-xl py-2 text-xs font-bold active:scale-95">🚀<br/>5 🪙</button>
+          <button onClick={()=>sendGift(10,"👑")} className="min-w-[64px] bg-[#150826] border border-[#3A1B63] rounded-xl py-2 text-xs font-bold active:scale-95">👑<br/>10</button>
+          <button onClick={()=>sendGift(50,"💎")} className="min-w-[64px] bg-[#FFD700] text-black rounded-xl py-2 text-xs font-black active:scale-95">💎<br/>50</button>
           <button onClick={()=>sendGift(100,"🔥")} className="min-w-[64px] bg-orange-600 rounded-xl py-2 text-xs font-bold active:scale-95">🔥<br/>100</button>
         </div>
-        <div className="p-2 flex gap-2 bg-black border-t border-zinc-800 relative z-30">
-          <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter" && sendChat()} className="flex-1 bg-zinc-800 rounded-full px-4 py-2.5 text-sm" placeholder={currentRoom ? `Chat in @${currentRoom}` : "Go live first"} />
-          <button onClick={sendChat} className="bg-white text-black px-5 rounded-full text-sm font-black active:scale-95">Send</button>
+        <div className="p-2 flex gap-2 bg-[#150826] border-t border-[#3A1B63] relative z-30">
+          <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter" && sendChat()} className="flex-1 bg-[#241040] border border-[#3A1B63] rounded-full px-4 py-2.5 text-sm outline-none placeholder:text-white/40" placeholder={currentRoom ? `Chat in @${currentRoom}` : "Go live first"} />
+          <button onClick={sendChat} className="bg-[#FFD700] text-black px-5 rounded-full text-sm font-black active:scale-95">Send</button>
         </div>
       </div>
 
       {tab==="discover" && (
-        <div className="flex-1 bg-black overflow-y-auto pb-[70px]">
+        <div className="flex-1 bg-[#150826] overflow-y-auto pb-[70px]">
           <div className="p-3">
-            <p className="text-xs font-bold mb-2">Discover LIVE - Users who entered username appear here</p>
+            <p className="text-xs font-bold mb-2 text-[#FFD700]">Discover LIVE - Users who entered username appear here</p>
             <div className="flex gap-3 overflow-x-auto">
-              <div className="text-center min-w-[56px]"><div onClick={goLive} className="w-14 h-14 rounded-full bg-white text-black flex items-center justify-center font-black cursor-pointer">+</div><p className="text-[11px] mt-1">Go LIVE</p></div>
+              <div className="text-center min-w-[56px]"><div onClick={goLive} className="w-14 h-14 rounded-full bg-[#FFD700] text-black flex items-center justify-center font-black cursor-pointer">+</div><p className="text-[11px] mt-1">Go LIVE</p></div>
               {liveHosts.map((h:any)=>(
-                <div key={h.nickname} onClick={()=>watchHost(h.nickname)} className="text-center min-w-[56px] cursor-pointer"><div className="w-14 h-14 rounded-full bg-red-600 border-2 border-pink-500 flex items-center justify-center animate-pulse">🔴</div><p className="text-[11px] mt-1 truncate w-14">@{h.nickname}</p></div>
+                <div key={h.nickname} onClick={()=>watchHost(h.nickname)} className="text-center min-w-[56px] cursor-pointer"><div className="w-14 h-14 rounded-full bg-red-600 border-2 border-[#FFD700] flex items-center justify-center animate-pulse">🔴</div><p className="text-[11px] mt-1 truncate w-14">@{h.nickname}</p></div>
               ))}
             </div>
           </div>
-          <div className="bg-zinc-900 h-64 flex items-center justify-center text-zinc-500 text-sm">LIVE Preview Area</div>
+          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl mx-3 h-64 flex items-center justify-center text-white/40 text-sm">LIVE Preview Area</div>
         </div>
       )}
 
       {tab==="ranking" && (
-        <div className="flex-1 bg-white text-black flex flex-col pb-[70px]">
-          <div className="flex gap-2 p-3 border-b">
-            <button onClick={()=>setRankingTab("viewers")} className={`px-4 py-1.5 rounded-full text-xs font-bold ${rankingTab==="viewers"?"bg-black text-white":"bg-zinc-100"}`}>Top viewers</button>
-            <button onClick={()=>setRankingTab("guardian")} className={`px-4 py-1.5 rounded-full text-xs font-bold ${rankingTab==="guardian"?"bg-black text-white":"bg-zinc-100"}`}>Guardian</button>
+        <div className="flex-1 bg-[#150826] text-white flex flex-col pb-[70px]">
+          <div className="flex gap-2 p-3 border-b border-[#3A1B63]">
+            <button onClick={()=>setRankingTab("viewers")} className={`px-4 py-1.5 rounded-full text-xs font-bold ${rankingTab==="viewers"?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>Top viewers</button>
+            <button onClick={()=>setRankingTab("guardian")} className={`px-4 py-1.5 rounded-full text-xs font-bold ${rankingTab==="guardian"?"bg-[#FFD700] text-black":"bg-[#241040] border border-[#3A1B63]"}`}>Guardian</button>
           </div>
           {rankingTab==="viewers" ? (
             <div className="flex-1 overflow-y-auto p-3">
-              {rankings.length===0 ? <p className="text-xs text-zinc-400 text-center mt-10">No viewers yet</p> :
+              {rankings.length===0 ? <p className="text-xs text-white/40 text-center mt-10">No viewers yet</p> :
                 rankings.map(r=>(
-                  <div key={r.user} className="flex items-center gap-3 py-2 border-b border-zinc-100">
-                    <span className="w-6 font-black">{r.rank}</span><div className="w-10 h-10 rounded-full bg-zinc-200"></div>
-                    <div className="flex-1"><p className="text-sm font-bold">@{r.user}</p></div><span className="text-sm font-bold">{r.pts} pts</span>
+                  <div key={r.user} className="flex items-center gap-3 py-2 border-b border-[#3A1B63]">
+                    <span className="w-6 font-black text-[#FFD700]">{r.rank}</span><div className="w-10 h-10 rounded-full bg-[#241040] border border-[#3A1B63]"></div>
+                    <div className="flex-1"><p className="text-sm font-bold">@{r.user}</p></div><span className="text-sm font-bold text-[#FFD700]">{r.pts} pts</span>
                   </div>
                 ))
               }
             </div>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center"><div className="text-7xl">🦌</div><h2 className="font-black text-xl mt-3">Guardian</h2><p className="text-xs text-zinc-500 mt-2">The #1 sender becomes Guardian</p><button onClick={()=>sendGift(100,"🛡️")} className="mt-4 bg-yellow-100 px-6 py-3 rounded-full text-xs font-bold">Send Guardian Pledge (100)</button></div>
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center"><div className="text-7xl">🦌</div><h2 className="font-black text-xl mt-3">Guardian</h2><p className="text-xs text-white/50 mt-2">The #1 sender becomes Guardian</p><button onClick={()=>sendGift(100,"🛡️")} className="mt-4 bg-[#FFD700] text-black px-6 py-3 rounded-full text-xs font-black">Send Guardian Pledge (100)</button></div>
           )}
         </div>
       )}
 
       {tab==="balance" && (
-        <div className="flex-1 bg-[#f8f5f7] text-black p-3 space-y-3 overflow-y-auto pb-[70px]">
-          <div className="text-center py-6"><p className="text-xs">Estimated balance</p><p className="text-4xl font-black">{keys} 🪙</p><p className="text-xs text-zinc-500">ZAR 0.00</p></div>
-          <div className="bg-white rounded-2xl p-4 flex justify-between items-center"><div><p className="text-sm font-bold">Coins</p><p className="text-xs text-zinc-500">@{nickname}</p></div><button onClick={()=>setShowRecharge(true)} className="text-xs bg-black text-white px-3 py-1 rounded-full">Get Coins</button></div>
-          <div className="bg-white rounded-2xl p-4"><p className="text-sm font-bold">Transactions</p><p className="text-xs text-zinc-500 mt-1">Purchase of Coins: will show here</p></div>
+        <div className="flex-1 bg-[#150826] text-white p-3 space-y-3 overflow-y-auto pb-[70px]">
+          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl text-center py-6"><p className="text-xs text-white/60">Estimated balance</p><p className="text-4xl font-black text-[#FFD700]">{keys} 🪙</p><p className="text-xs text-white/50">ZAR 0.00</p></div>
+          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-4 flex justify-between items-center"><div><p className="text-sm font-bold">Coins</p><p className="text-xs text-white/50">@{nickname}</p></div><button onClick={()=>setShowRecharge(true)} className="text-xs bg-[#FFD700] text-black px-3 py-1.5 rounded-full font-black">Get Coins</button></div>
+          <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-4"><p className="text-sm font-bold">Transactions</p><p className="text-xs text-white/50 mt-1">Purchase of Coins: will show here</p></div>
         </div>
       )}
 
       {showRecharge && (
-        <div className="absolute inset-0 z-50 flex flex-col justify-end"><div className="flex-1 bg-black/60" onClick={()=>setShowRecharge(false)}></div><div className="bg-white text-black rounded-t-[24px] p-4"><h2 className="text-center font-black">Recharge</h2><div className="grid grid-cols-3 gap-2 mt-4">{[{c:5,r:"R 1,35"},{c:30,r:"R 8,09"},{c:40,r:"R 10,79"},{c:50,r:"R 13,45"},{c:70,r:"R 18,85"},{c:139,r:"R 37,39"}].map(p=><div key={p.c} onClick={()=>{ setKeys(k=>k+p.c); localStorage.setItem("loomi_keys",(keys+p.c).toString()); }} className="border rounded-xl p-3 text-center cursor-pointer active:scale-95"><p className="font-black">🪙 {p.c}</p><p className="text-xs">{p.r}</p></div>)}</div><button onClick={()=>setShowRecharge(false)} className="w-full mt-4 bg-black text-white py-3 rounded-full font-black">Close</button></div></div>
+        <div className="absolute inset-0 z-50 flex flex-col justify-end"><div className="flex-1 bg-black/60" onClick={()=>setShowRecharge(false)}></div><div className="bg-white text-black rounded-t-[24px] p-4"><h2 className="text-center font-black">Recharge - Loomi-Live</h2><div className="grid grid-cols-3 gap-2 mt-4">{[{c:5,r:"R 1,35"},{c:30,r:"R 8,09"},{c:40,r:"R 10,79"},{c:50,r:"R 13,45"},{c:70,r:"R 18,85"},{c:139,r:"R 37,39"}].map(p=><div key={p.c} onClick={()=>{ setKeys(k=>k+p.c); localStorage.setItem("loomi_keys",(keys+p.c).toString()); }} className="border rounded-xl p-3 text-center cursor-pointer active:scale-95"><p className="font-black">🪙 {p.c}</p><p className="text-xs">{p.r}</p></div>)}</div><button onClick={()=>setShowRecharge(false)} className="w-full mt-4 bg-black text-white py-3 rounded-full font-black">Close</button></div></div>
       )}
 
-      {/* FIXED: Dashboard Drawer - was inside style before, now outside */}
       {showDashboard && (
         <div className="absolute inset-0 z-[100] flex">
           <div className="flex-1 bg-black/60" onClick={()=>setShowDashboard(false)}></div>
-          <div className="w-[78%] max-w-[320px] bg-[#f5f5f5] h-full overflow-y-auto p-3 space-y-3">
-            <div className="flex justify-between items-center p-1"><p className="font-black text-black">@{nickname}</p><button onClick={()=>setShowDashboard(false)} className="text-black text-xl">✕</button></div>
-            <div onClick={()=>{setTab("balance"); setShowDashboard(false);}} className="bg-white rounded-2xl p-3.5 flex justify-between items-center shadow-sm cursor-pointer"><div className="flex items-center gap-3"><span>🪪</span><p className="font-bold text-[14px] text-black">Balance</p></div><span className="text-zinc-400">›</span></div>
-            <div className="bg-white rounded-2xl shadow-sm divide-y">
-              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>🕐</span><p className="text-[14px] font-bold text-black">Activity centre</p></div><span className="text-zinc-400">›</span></div>
-              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>⬇️</span><p className="text-[14px] font-bold text-black">Offline videos</p></div><span className="text-zinc-400">›</span></div>
-              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>🎵</span><p className="text-[14px] font-bold text-black">Your Music</p></div><span className="text-zinc-400">›</span></div>
+          <div className="w-[78%] max-w-[320px] bg-[#150826] border-l border-[#3A1B63] h-full overflow-y-auto p-3 space-y-3">
+            <div className="flex justify-between items-center p-1"><p className="font-black text-white">@{nickname}</p><button onClick={()=>setShowDashboard(false)} className="text-white text-xl">✕</button></div>
+            <div onClick={()=>{setTab("balance"); setShowDashboard(false);}} className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-3.5 flex justify-between items-center cursor-pointer"><div className="flex items-center gap-3"><span>🪪</span><p className="font-bold text-[14px] text-white">Balance</p></div><span className="text-white/40">›</span></div>
+            <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl divide-y divide-[#3A1B63]">
+              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>🕐</span><p className="text-[14px] font-bold text-white">Activity centre</p></div><span className="text-white/40">›</span></div>
+              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>⬇️</span><p className="text-[14px] font-bold text-white">Offline videos</p></div><span className="text-white/40">›</span></div>
+              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>🎵</span><p className="text-[14px] font-bold text-white">Your Music</p></div><span className="text-white/40">›</span></div>
             </div>
-            <div className="bg-white rounded-2xl p-3.5 flex justify-between items-center shadow-sm"><div className="flex gap-3 items-center"><span>🔳</span><p className="text-[14px] font-bold text-black">Your QR code</p></div><span className="text-zinc-400">›</span></div>
-            <div className="bg-white rounded-2xl shadow-sm divide-y">
-              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>💡</span><p className="text-[14px] font-bold text-black">Creator Search Insights</p></div><span className="text-zinc-400">›</span></div>
-              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>👥⭐</span><p className="text-[14px] font-bold text-black">Loomi Studio</p></div><span className="text-zinc-400">›</span></div>
-              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>🔥</span><p className="text-[14px] font-bold text-black">Promote</p></div><span className="text-zinc-400">›</span></div>
-              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span className="text-[10px] border px-1">AD</span><p className="text-[14px] font-bold text-black">Ads Manager</p></div><span className="text-zinc-400">›</span></div>
+            <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>🔳</span><p className="text-[14px] font-bold text-white">Your QR code</p></div><span className="text-white/40">›</span></div>
+            <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl divide-y divide-[#3A1B63]">
+              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>💡</span><p className="text-[14px] font-bold text-white">Creator Search Insights</p></div><span className="text-white/40">›</span></div>
+              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>👥⭐</span><p className="text-[14px] font-bold text-white">Loomi Studio</p></div><span className="text-white/40">›</span></div>
+              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>🔥</span><p className="text-[14px] font-bold text-white">Promote</p></div><span className="text-white/40">›</span></div>
+              <div className="p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span className="text-[10px] border px-1">AD</span><p className="text-[14px] font-bold text-white">Ads Manager</p></div><span className="text-white/40">›</span></div>
             </div>
-            <div className="bg-white rounded-2xl p-3.5 flex justify-between items-center shadow-sm"><div className="flex gap-3 items-center"><span>⚙️</span><p className="text-[14px] font-bold text-black">Settings and privacy</p></div><span className="text-zinc-400">›</span></div>
+            <div className="bg-[#241040] border border-[#3A1B63] rounded-2xl p-3.5 flex justify-between items-center"><div className="flex gap-3 items-center"><span>⚙️</span><p className="text-[14px] font-bold text-white">Settings and privacy</p></div><span className="text-white/40">›</span></div>
           </div>
         </div>
       )}
 
-      {/* ADD-ON: Bottom Nav - TikTok steal */}
-      <div className="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto bg-black border-t border-zinc-800 flex justify-around items-center py-2.5 z-[60]">
-        <button onClick={()=>setTab("live")} className={`flex flex-col items-center ${tab==="live"?"text-white":"text-zinc-500"}`}><span className="text-[20px]">🏠</span><span className="text-[9px] font-bold">LIVE</span></button>
-        <button onClick={()=>setTab("discover")} className={`flex flex-col items-center ${tab==="discover"?"text-white":"text-zinc-500"}`}><span className="text-[20px]">🔍</span><span className="text-[9px]">Discover</span></button>
-        <button onClick={goLive} className="bg-white text-black w-12 h-8 rounded-lg flex items-center justify-center font-black text-xl">+</button>
-        <button onClick={()=>setTab("ranking")} className={`flex flex-col items-center ${tab==="ranking"?"text-white":"text-zinc-500"}`}><span className="text-[20px]">🏆</span><span className="text-[9px]">Rankings</span></button>
-        <button onClick={()=>setTab("balance")} className={`flex flex-col items-center ${tab==="balance"?"text-white":"text-zinc-500"}`}><span className="text-[20px]">👤</span><span className="text-[9px]">Balance</span></button>
+      <div className="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto bg-[#150826] border-t border-[#3A1B63] flex justify-around items-center py-2.5 z-[60]">
+        <button onClick={()=>setTab("live")} className={`flex flex-col items-center ${tab==="live"?"text-[#FFD700]":"text-white/50"}`}><span className="text-[20px]">🏠</span><span className="text-[9px] font-bold">LIVE</span></button>
+        <button onClick={()=>setTab("discover")} className={`flex flex-col items-center ${tab==="discover"?"text-[#FFD700]":"text-white/50"}`}><span className="text-[20px]">🔍</span><span className="text-[9px]">Discover</span></button>
+        <button onClick={goLive} className="bg-[#FFD700] text-black w-12 h-8 rounded-lg flex items-center justify-center font-black text-xl">+</button>
+        <button onClick={()=>setTab("ranking")} className={`flex flex-col items-center ${tab==="ranking"?"text-[#FFD700]":"text-white/50"}`}><span className="text-[20px]">🏆</span><span className="text-[9px]">Rankings</span></button>
+        <button onClick={()=>setTab("balance")} className={`flex flex-col items-center ${tab==="balance"?"text-[#FFD700]":"text-white/50"}`}><span className="text-[20px]">👤</span><span className="text-[9px]">Balance</span></button>
       </div>
 
       <style>{`
