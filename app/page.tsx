@@ -95,18 +95,17 @@ export default function LoomiLive() {
   try { await deleteDoc(doc(db, "loomi_posts", p.id)); } catch {}
   setPosts((prev:any[]) => prev.filter((x:any) => x.id !== p.id));
 };
-
-const saveEditPost = async () => {
-  if (!editingPost) return;
-  try { await updateDoc(doc(db, "loomi_posts", editingPost.id), { caption: editCaption }); } catch {}
-  setPosts((prev:any[]) => prev.map((x:any) => x.id === editingPost.id ? { ...x, caption: editCaption } : x));
-  setEditingPost(null);
-const deletePost = async (p:any) => {
-  if (!confirm("Delete this post?")) return;
-  try { await deleteDoc(doc(db, "loomi_posts", p.id)); } catch {}
-  setPosts((prev:any[]) => prev.filter((x:any) => x.id !== p.id));
-};
-  
+  const deletePost = async (p:any) => {
+    if (!confirm("Delete this post?")) return;
+    try { await deleteDoc(doc(db, "loomi_posts", p.id)); } catch {}
+    setPosts((prev:any[]) => prev.filter((x:any) => x.id !== p.id));
+  };
+  const saveEditPost = async () => {
+    if (!editingPost) return;
+    try { await updateDoc(doc(db, "loomi_posts", editingPost.id), { caption: editCaption }); } catch {}
+    setPosts((prev:any[]) => prev.map((x:any) => x.id === editingPost.id ? { ...x, caption: editCaption } : x));
+    setEditingPost(null);
+  };
   const tipPost=async (p:Post)=>{ await sendGift(5,"💎"); await addDoc(collection(db,"loomi_tips"),{sender:nicknameRef.current,creator:p.creator,postId:p.id,amount:5,createdAt:serverTimestamp()}); };
   const toggleSavePost=(id:string)=>{ const nx=savedPosts.includes(id)?savedPosts.filter(x=>x!==id):[...savedPosts,id]; setSavedPosts(nx); try{localStorage.setItem("loomi_saved",JSON.stringify(nx));}catch{} };
   const sharePost=async (p:Post)=>{ const o=typeof window!=="undefined"?window.location.origin:""; const t=`🔥 Check this on LOOMI-LIVE by @${p.creator}: ${p.caption} - ${o}`; try{ if(navigator.share) await navigator.share({title:"LOOMI-LIVE",text:t,url:o}); else { await navigator.clipboard.writeText(t); alert("Post link copied!"); } }catch{ await navigator.clipboard.writeText(t); alert("Post link copied!"); } };
