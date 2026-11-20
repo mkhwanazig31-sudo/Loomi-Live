@@ -5,6 +5,7 @@ import { db, auth } from "../lib/firebase";
 import { collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, doc, setDoc, deleteDoc, updateDoc, getDocs, where } from "firebase/firestore";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 import AiAssistant from "./components/AiAssistant";
+import { collection, addDoc, deleteDoc, updateDoc, doc, serverTimestamp } from "firebase/firestore";
 const ICE = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" }, { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" }] };
 type Post = { id: string; creator: string; caption: string; mediaUrl: string; mediaType?: string; isLocked: boolean; price: number; likes: number; likedBy?: string[]; unlockedBy?: string[]; createdAt?: any; postType?: string; viewOnce?: boolean; expiry?: string };
 type DMThread = { id: string; other: string; lastMsg: string; lastAt: number };
@@ -89,10 +90,30 @@ export default function LoomiLive() {
   const markViewOnce=(id:string)=>{ if(!viewOnceViewed.includes(id)){ const nx=[...viewOnceViewed,id]; setViewOnceViewed(nx); try{localStorage.setItem("loomi_viewonce",JSON.stringify(nx));}catch{} } };
   const unlockPost=async (p:Post)=>{ if(p.unlockedBy?.includes(nicknameRef.current)||p.creator===nicknameRef.current) return; if(keys<p.price){ setShowRecharge(true); return; } const nk=keys-p.price; setKeys(nk); try{localStorage.setItem("loomi_keys",nk.toString());}catch{} await updateDoc(doc(db,"loomi_posts",p.id),{unlockedBy:[...(p.unlockedBy||[]),nicknameRef.current]}); await addDoc(collection(db,"loomi_unlocks"),{user:nicknameRef.current,creator:p.creator,postId:p.id,amount:p.price,createdAt:serverTimestamp()}); };
   const likePost=async (p:Post)=>{ const al=p.likedBy?.includes(nicknameRef.current); const nl=al?(p.likedBy||[]).filter(u=>u!==nicknameRef.current):[...(p.likedBy||[]),nicknameRef.current]; await updateDoc(doc(db,"loomi_posts",p.id),{likes:Math.max(0,(p.likes||0)+(al?-1:1)),likedBy:nl}); };
+  const deletePost = async (p:any) => {
+  if (!confirm("Delete this post?")) return;
+  try { await deleteDoc(doc(db, "loomi_posts", p.id)); } catch {}
+  setPosts((prev:any[]) => prev.filter((x:any) => x.id !== p.id));
+};
+
+const saveEditPost = async () => {
+  if (!editingPost) return;
+  try { await updateDoc(doc(db, "loomi_posts", editingPost.id), { caption: editCaption }); } catch {}
+  setPosts((prev:any[]) => prev.map((x:any) => x.id === editingPost.id ? { ...x, caption: editCaption } : x));
+  setEditingPost(null);
+const deletePost = async (p:any) => {
+  if (!confirm("Delete this post?")) return;
+  try { await deleteDoc(doc(db, "loomi_posts", p.id)); } catch {}
+  setPosts((prev:any[]) => prev.filter((x:any) => x.id !== p.id));
+};
+  
   const tipPost=async (p:Post)=>{ await sendGift(5,"💎"); await addDoc(collection(db,"loomi_tips"),{sender:nicknameRef.current,creator:p.creator,postId:p.id,amount:5,createdAt:serverTimestamp()}); };
   const toggleSavePost=(id:string)=>{ const nx=savedPosts.includes(id)?savedPosts.filter(x=>x!==id):[...savedPosts,id]; setSavedPosts(nx); try{localStorage.setItem("loomi_saved",JSON.stringify(nx));}catch{} };
   const sharePost=async (p:Post)=>{ const o=typeof window!=="undefined"?window.location.origin:""; const t=`🔥 Check this on LOOMI-LIVE by @${p.creator}: ${p.caption} - ${o}`; try{ if(navigator.share) await navigator.share({title:"LOOMI-LIVE",text:t,url:o}); else { await navigator.clipboard.writeText(t); alert("Post link copied!"); } }catch{ await navigator.clipboard.writeText(t); alert("Post link copied!"); } };
   const sendPostComment=async (pid:string)=>{ const t=commentInput.trim(); if(!t) return; await addDoc(collection(db,"loomi_post_comments"),{postId:pid,user:nicknameRef.current,msg:t,createdAt:serverTimestamp()}); setCommentInput(""); autoReport(nicknameRef.current,t); };
+  const [editingPost, setEditingPost] = useState<any>(null);
+  const [editCaption, setEditCaption] = useState("");
+  const [showPostMenu, setShowPostMenu] = useState<string | null>(null);
   const requestPrivate=async ()=>{ if(!watching) return alert("Watch someone first"); if(keys<vipPrice){ setShowRecharge(true); return; } const nk=keys-vipPrice; setKeys(nk); try{localStorage.setItem("loomi_keys",nk.toString());}catch{} await addDoc(collection(db,"loomi_private"),{host:watching,viewer:nicknameRef.current,price:vipPrice,status:"pending",createdAt:serverTimestamp()}); setShowVipModal(false); setVipStatus("Request sent - waiting for host..."); };
   const acceptVip=async ()=>{ if(!vipIncoming) return; await updateDoc(doc(db,"loomi_private",vipIncoming.id),{status:"accepted"}); setVipActive(true); setVipWith(vipIncoming.viewer); setVipSeconds(300); setVipIncoming(null); };
   const declineVip=async ()=>{ if(!vipIncoming) return; await updateDoc(doc(db,"loomi_private",vipIncoming.id),{status:"declined"}); setVipIncoming(null); };
@@ -167,7 +188,17 @@ export default function LoomiLive() {
         <div className="space-y-2"><DrawerRow icon="⬇️" label="Offline Videos" sub="Saved posts" onClick={()=>{ setShowDashboard(false); setTab("feed"); setFeedFilter("saved"); }} /><DrawerRow icon="🎵" label="Your Music" sub="Sounds for LIVE" onClick={()=>{ setShowDashboard(false); setShowMusic(true); }} /><DrawerRow icon="⚙️" label="Settings and Privacy" sub="Account • Notifications" onClick={()=>{ setShowDashboard(false); setShowSettings(true); }} /></div>
         <button onClick={handleLogout} className="w-full bg-red-600 py-3 rounded-2xl font-black text-sm">Logout</button>
         <p className="text-center text-[10px] text-white/30 pb-2">LOOMI-LIVE 18+ • v1.0</p>
-      </div></div>)}      
+      </div></div>)} 
+      {editingPost && (
+  <div className="absolute inset-0 z-[130] flex items-center justify-center p-6 bg-black/80">
+    <div className="bg-[#1E0B36] border border-[#FFD700] rounded-3xl p-5 w-full">
+      <h2 className="font-black text-center">✏️ Edit Post</h2>
+      <textarea value={editCaption} onChange={e=>setEditCaption(e.target.value)} className="w-full bg-[#241040] border border-[#3A1B63] rounded-xl p-3 text-sm mt-3" rows={4} />
+      <button onClick={saveEditPost} className="w-full mt-3 bg-[#FFD700] text-black py-3 rounded-full font-black text-xs">Save Changes</button>
+      <button onClick={()=>setEditingPost(null)} className="w-full mt-2 text-white/60 text-xs">Cancel</button>
+    </div>
+  </div>
+)}
       <AiAssistant />
       {showQR&&(<div className="absolute inset-0 z-[105] flex items-center justify-center p-6 bg-black/80"><div className="bg-[#1E0B36] border border-[#FFD700] rounded-3xl p-6 w-full text-center"><h2 className="font-black">Your QR Code</h2><div className="bg-white text-black rounded-2xl p-6 mt-3"><p className="text-5xl">🔳</p><p className="font-black mt-2">@{nickname}</p><p className="text-xs text-black/60 break-all">{referralLink}</p></div><button onClick={async()=>{ try{ await navigator.clipboard.writeText(referralLink); alert("Link copied!"); }catch{} }} className="w-full mt-3 bg-[#FFD700] text-black py-3 rounded-full font-black text-xs">Copy Link</button><button onClick={()=>setShowQR(false)} className="w-full mt-2 text-white/60 text-xs">Close</button></div></div>)}
       {showActivity&&(<div className="absolute inset-0 z-[105] flex items-center justify-center p-6 bg-black/80"><div className="bg-[#1E0B36] border border-[#FFD700] rounded-3xl p-5 w-full max-h-[80vh] overflow-y-auto"><h2 className="font-black text-center">🕐 Activity Centre</h2>{notifications.length===0?<p className="text-center text-white/50 text-xs mt-4">No activity yet. Follow people, go LIVE, get gifts - it shows here.</p>:notifications.map(n=>(<div key={n.id} className="bg-[#241040] border border-[#3A1B63] rounded-xl p-3 mt-2 text-sm">{n.text}</div>))}<button onClick={()=>setShowActivity(false)} className="w-full mt-4 bg-[#FFD700] text-black py-3 rounded-full font-black text-xs">Close</button></div></div>)}
