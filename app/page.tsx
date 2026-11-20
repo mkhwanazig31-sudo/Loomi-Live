@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import { db, auth } from "../lib/firebase";
 import { collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, doc, setDoc, deleteDoc, updateDoc, getDocs, where } from "firebase/firestore";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
+from ai_assistant import ai_assistant_reply
 const ICE = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" }, { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" }] };
 type Post = { id: string; creator: string; caption: string; mediaUrl: string; mediaType?: string; isLocked: boolean; price: number; likes: number; likedBy?: string[]; unlockedBy?: string[]; createdAt?: any; postType?: string; viewOnce?: boolean; expiry?: string };
 type DMThread = { id: string; other: string; lastMsg: string; lastAt: number };
@@ -113,6 +114,66 @@ export default function LoomiLive() {
   if(ageDenied) return (<div className="min-h-screen bg-black text-white flex items-center justify-center max-w-[430px] mx-auto p-6 text-center"><div><p className="text-5xl">🔞</p><h1 className="font-black text-xl mt-3">Sorry, 18+ Only</h1><p className="text-sm text-white/60 mt-2">Come back when you are 18.</p><button onClick={()=>{ try{localStorage.removeItem("loomi_18");}catch{} setAgeDenied(false); }} className="mt-4 text-[#FFD700] text-xs underline">I made a mistake - Go back</button></div></div>);
   if(authLoading) return (<div className="min-h-screen bg-[#150826] text-white flex items-center justify-center max-w-[430px] mx-auto"><p className="font-black text-[#FFD700]">LOOMI-LIVE loading...</p></div>);
   if(!authUser) return (<div className="min-h-screen bg-[#150826] text-white flex items-center justify-center max-w-[430px] mx-auto p-6"><div className="w-full"><p className="text-[11px] tracking-[0.3em] text-[#FFD700] font-black text-center">LOOMI-LIVE - 18+ 🔞</p><h1 className="text-[28px] font-black mt-2 text-center">{authMode==="signup"?"Create Account ✨":"Welcome Back 🔴"}</h1><p className="text-xs text-white/50 mt-1 text-center">Your own account - 18+ only</p>{authMode==="signup"&&<input value={tempNick} onChange={e=>setTempNick(e.target.value)} placeholder="@username - e.g. thabo" className="w-full mt-6 bg-[#241040] border border-[#3A1B63] rounded-2xl p-4 outline-none focus:border-[#FFD700]" />}<input value={authEmail} onChange={e=>setAuthEmail(e.target.value)} placeholder="Email - you@gmail.com" type="email" className="w-full mt-3 bg-[#241040] border border-[#3A1B63] rounded-2xl p-4 outline-none focus:border-[#FFD700]" /><input value={authPass} onChange={e=>setAuthPass(e.target.value)} placeholder="Password - min 6 chars" type="password" className="w-full mt-3 bg-[#241040] border border-[#3A1B63] rounded-2xl p-4 outline-none focus:border-[#FFD700]" /><label className="flex items-center gap-2 mt-4 text-xs"><input type="checkbox" checked={agreeAge} onChange={e=>setAgreeAge(e.target.checked)} className="w-4 h-4 accent-[#FFD700]" /> I confirm I am 18+ 🔞</label><label className="flex items-center gap-2 mt-2 text-xs"><input type="checkbox" checked={agreeTerms} onChange={e=>setAgreeTerms(e.target.checked)} className="w-4 h-4 accent-[#FFD700]" /> I accept <button type="button" onClick={()=>setShowRules(true)} className="text-[#FFD700] underline">Rules & T's & C's</button></label>{showRules&&<div className="mt-3 bg-[#1E0B36] border border-[#FFD700] rounded-2xl p-3 text-xs max-h-[250px] overflow-y-auto"><p><b>18+ ONLY, CONSENT, NO RECORDING, NO LEAKING, NO REAL INFO, NO ILLEGAL.</b> Coins no refunds except host no-show. Host sets DM / VIP price. Watermark compulsory.</p><button onClick={()=>setShowRules(false)} className="w-full bg-[#FFD700] text-black py-2 rounded-full font-black">Close</button></div>}{authError&&<p className="mt-3 bg-red-600/20 border border-red-500 rounded-xl p-3 text-xs text-center text-red-300">{authError}</p>}<button onClick={handleAuth} className="w-full mt-4 bg-[#FFD700] text-black py-4 rounded-2xl font-black">{authMode==="signup"?"Create Account":"Login"}</button><button onClick={()=>{ setAuthMode(authMode==="signup"?"login":"signup"); setAuthError(""); }} className="w-full mt-3 text-[#FFD700] text-xs underline">{authMode==="signup"?"Already have account? Login":"No account? Create one"}</button></div></div>);
+
+def ai_assistant_reply(user_message, user_name="bruvv", user_interests=["music"]):
+    msg = user_message.lower().strip()
+
+    # 1. GREETING
+    if any(w in msg for w in ["hi", "hello", "yo", "hey", "what's up", "wassup"]):
+        return f"Yo {user_name} what's good? You wanna go LIVE, watch someone, or find new creators?"
+
+    # 2. RECOMMENDATIONS
+    if any(w in msg for w in ["recommend", "suggest", "who to watch", "find", "show me"]):
+        return f"Bet, based on you liking {', '.join(user_interests)}, I recommend checking LIVE creators in {user_interests[0]} right now. Want me to put them on top of your feed?"
+
+    # 3. GO LIVE HELP
+    if any(w in msg for w in ["go live", "stream", "start live", "broadcast"]):
+        return "Let's go LIVE! Is your camera + mic ready? And have you verified 18+? If yes, say 'I'm ready' and I'll put you on the feed."
+
+    # 4. MODERATION / SAFETY
+    if any(w in msg for w in ["report", "block", "harass", "spam", "fake"]):
+        return "Got you. Who do you want me to report/block? Give me their @name and I'll hide them from your feed and send it to moderation."
+
+    # 5. TRENDING
+    if any(w in msg for w in ["trending", "popular", "viral", "hot"]):
+        return "Right now trending is LIVE creators getting the most ❤️🔥 in the last hour. Want trending in music, dance, talk or gaming?"
+
+    # 6. DEFAULT - Normal talk
+    return f"I hear you {user_name} - you said: '{user_message}'. Want me to find creators for you, or help you go LIVE?"
+
+def ai_moderate_chat(message):
+    """
+    Use this before showing any chat message in LIVE.
+    Returns True if safe, False if blocked.
+    """
+    banned_words = ["spam_link", "scam", "underage", "fake_id"]
+    msg = message.lower()
+    for word in banned_words:
+        if word in msg:
+            return False, "Blocked by AI moderation"
+    return True, "Safe"
+
+def ai_suggest_creators(user_interests, creators_list):
+    """
+    creators_list = [{"name": "Creator_A", "category": "music", "is_live": True}, ...]
+    Returns only matching + live first
+    """
+    scored = []
+    for c in creators_list:
+        score = 0
+        if c.get("is_live"):
+            score += 100
+        if c.get("category") in user_interests:
+            score += 50
+        scored.append((score, c))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [c for score, c in scored]
+
+# @app.route("/assistant", methods=["POST"])
+# def assistant():
+#     msg = request.json.get("message", "")
+#     reply = ai_assistant_reply(msg)
+#     return jsonify({"assistant": reply})
   return (
     <div className={`min-h-screen bg-[#150826] text-white flex flex-col max-w-[430px] mx-auto relative overflow-hidden ${vipActive?"ring-4 ring-[#FFD700]":""}`}>
       <div className="flex justify-between items-center px-4 pt-3 pb-1 bg-[#150826]"><div><p className="text-[11px] tracking-[0.3em] text-[#FFD700] font-black leading-none">MANSION</p><h1 className="text-[22px] font-black leading-none mt-0.5">LOOMI-LIVE <span className="text-[10px] bg-red-600 px-1.5 py-0.5 rounded-full align-middle">18+</span></h1></div><div className="flex items-center gap-2"><button onClick={()=>setTab("dm")} className="relative w-8 h-8 bg-[#241040] border border-[#3A1B63] rounded-full text-sm">💬{dmThreads.length>0&&<span className="absolute -top-1 -right-1 bg-[#FFD700] text-black text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-black">{dmThreads.length}</span>}</button><button onClick={()=>setShowNotifs(true)} className="relative w-8 h-8 bg-[#241040] border border-[#3A1B63] rounded-full text-sm">🔔{notifications.length>0&&<span className="absolute -top-1 -right-1 bg-red-500 text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-black">{notifications.length}</span>}</button><span className="bg-[#241040] border border-[#3A1B63] px-3 py-1.5 rounded-full text-xs font-bold">🪙 {keys}</span><button onClick={()=>setShowDashboard(true)} className="w-8 h-8 bg-[#241040] border border-[#3A1B63] rounded-full text-sm">☰</button></div></div>
