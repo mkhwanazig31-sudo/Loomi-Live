@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import { db, auth } from "../lib/firebase";
 import { collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, doc, setDoc, deleteDoc, updateDoc, getDocs, where } from "firebase/firestore";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
+import AiAssistant from "./components/AiAssistant";
 const ICE = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" }, { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" }] };
 type Post = { id: string; creator: string; caption: string; mediaUrl: string; mediaType?: string; isLocked: boolean; price: number; likes: number; likedBy?: string[]; unlockedBy?: string[]; createdAt?: any; postType?: string; viewOnce?: boolean; expiry?: string };
 type DMThread = { id: string; other: string; lastMsg: string; lastAt: number };
@@ -188,6 +189,7 @@ export default function LoomiLive() {
         <button onClick={()=>setShowPlusMenu(true)} className="bg-[#FFD700] text-black w-12 h-8 rounded-lg flex items-center justify-center font-black text-xl">+</button>
         <button onClick={()=>setTab("dm")} className={`flex flex-col items-center ${tab==="dm"?"text-[#FFD700]":"text-white/50"}`}><span className="text-[20px]">💬</span><span className="text-[9px]">DM</span></button>
         <button onClick={()=>setTab("balance")} className={`flex flex-col items-center ${tab==="balance"?"text-[#FFD700]":"text-white/50"}`}><span className="text-[20px]">👤</span><span className="text-[9px]">Wallet</span></button>
+      <AiAssistant />
       </div>
       <style>{`
         @keyframes heartFloat{0%{transform:translateY(0) scale(0.3);opacity:0}15%{opacity:1}100%{transform:translateY(-80vh);opacity:0}}
