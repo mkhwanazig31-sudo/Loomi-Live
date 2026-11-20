@@ -5,7 +5,6 @@ import { db, auth } from "../lib/firebase";
 import { collection, addDoc, query, orderBy, limit, onSnapshot, serverTimestamp, doc, setDoc, deleteDoc, updateDoc, getDocs, where } from "firebase/firestore";
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "firebase/auth";
 import AiAssistant from "./components/AiAssistant";
-import { collection, addDoc, deleteDoc, updateDoc, doc, serverTimestamp } from "firebase/firestore";
 const ICE = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }, { urls: "turn:openrelay.metered.ca:80", username: "openrelayproject", credential: "openrelayproject" }, { urls: "turn:openrelay.metered.ca:443", username: "openrelayproject", credential: "openrelayproject" }] };
 type Post = { id: string; creator: string; caption: string; mediaUrl: string; mediaType?: string; isLocked: boolean; price: number; likes: number; likedBy?: string[]; unlockedBy?: string[]; createdAt?: any; postType?: string; viewOnce?: boolean; expiry?: string };
 type DMThread = { id: string; other: string; lastMsg: string; lastAt: number };
@@ -95,11 +94,7 @@ export default function LoomiLive() {
   try { await deleteDoc(doc(db, "loomi_posts", p.id)); } catch {}
   setPosts((prev:any[]) => prev.filter((x:any) => x.id !== p.id));
 };
-  const deletePost = async (p:any) => {
-    if (!confirm("Delete this post?")) return;
-    try { await deleteDoc(doc(db, "loomi_posts", p.id)); } catch {}
-    setPosts((prev:any[]) => prev.filter((x:any) => x.id !== p.id));
-  };
+ 
   const saveEditPost = async () => {
     if (!editingPost) return;
     try { await updateDoc(doc(db, "loomi_posts", editingPost.id), { caption: editCaption }); } catch {}
