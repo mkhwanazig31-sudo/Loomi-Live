@@ -253,13 +253,7 @@ export default function LoomiLive() {
         <button onClick={()=>setTab("balance")} className={`flex flex-col items-center ${tab==="balance"?"text-[#E8C469]":"text-white/50"}`}><span className="text-[20px]">👤</span><span className="text-[9px] font-bold">Wallet</span></button>
       </div>
       <style>{`
-        @keyframes heartFloat{0%{transform:translateY(0) scale(0.3);opacity:0}15%{opacity:1}100%{transform:translateY(-80vh);opacity:0}}
-        .animate-heart{animation:heartFloat 3s ease-out forwards}
-        @keyframes flyComment{0%{transform:translateX(100vw);opacity:0}10%{opacity:1}90%{opacity:1}100%{transform:translateX(-100%);opacity:0}}
-        .animate-flyComment{animation:flyComment linear forwards}
-        img, video { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
-        @media print { body { display: none !important; } }
-      `}</style>
+             <style>{".animate-heart{animation:heartFloat 3s ease-out forwards}@keyframes heartFloat{0%{transform:translateY(0) scale(0.3);opacity:0}15%{opacity:1}100%{transform:translateY(-80vh);opacity:0}}@keyframes flyComment{0%{transform:translateX(100vw);opacity:0}10%{opacity:1}90%{opacity:1}100%{transform:translateX(-100%);opacity:0}}.animate-flyComment{animation:flyComment linear forwards}img,video{-webkit-touch-callout:none;user-select:none;-webkit-user-select:none;}"}</style>
     </div>
   );
 }
