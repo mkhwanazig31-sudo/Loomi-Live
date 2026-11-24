@@ -1,0 +1,38 @@
+name: Loomi Auto Fix
+
+on:
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  fix:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.comment.body, '/fix')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Ask Groq to fix page.tsx
+        env:
+          GROQ_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          python fix_bot.py
+
+      - name: Commit fix
+        run: |
+          git config user.name "Loomi Bot"
+          git config user.email "bot@loomi.live"
+          git add .
+          git commit -m "Auto fix by Loomi Bot" || echo "No changes"
+          git push
