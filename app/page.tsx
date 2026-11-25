@@ -144,7 +144,6 @@ const doSpin = () => {
   Dashboard
 </button>
 </div>
-</div>
 
       {/* === WHO YOU ARE === */}
       <div className="flex justify-between items-center px-4 py-2.5 bg-[#0A0A0E] text-xs border-b border-white/5">
