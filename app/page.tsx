@@ -112,10 +112,28 @@ export default function LoomiLive() {
   const savePrivacy=async ()=>{ try{localStorage.setItem("loomi_privacy",JSON.stringify(privacySettings));}catch{} try{ if(privacySettings.privateProfile) localStorage.setItem("loomi_private_"+nickname,"1"); else localStorage.removeItem("loomi_private_"+nickname); }catch{} if(authUser){ try{ await updateDoc(doc(db,"loomi_users",authUser.uid),{privacy:privacySettings}); }catch{} } setShowPrivacy(false); alert("Privacy saved ✅"); };
   const isProfilePrivate=(u:string)=>{ try{ return localStorage.getItem("loomi_private_"+u)==="1"; }catch{ return false; } };
   const DrawerRow=({icon,label,sub,onClick,highlight=false,badge}:any)=>(<div onClick={onClick} className={`flex items-center gap-3 px-3.5 py-3 cursor-pointer rounded-xl ${highlight?"bg-[#E8C469] text-black":"bg-[#16161D] border border-white/10"}`}><div className={`w-9 h-9 shrink-0 rounded-full flex items-center justify-center text-[16px] ${highlight?"bg-black/10":"bg-[#0A0A0E]"}`}>{icon}</div><div className="flex-1 min-w-0"><p className={`text-[14px] font-bold leading-tight truncate ${highlight?"text-black":"text-white"}`}>{label}</p>{sub&&<p className={`text-[11px] leading-tight truncate ${highlight?"text-black/60":"text-white/50"}`}>{sub}</p>}</div>{badge&&<span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{badge}</span>}<span className={highlight?"text-black/60":"text-white/40"}>›</span></div>);
+  // --- SPIN THE ROOM ---
+const [spinNames, setSpinNames] = useState(["You", "Breezy", "Kay", "Lerato", "Thabo", "Mpho"]);
+const [spinning, setSpinning] = useState(false);
+const [spinWinner, setSpinWinner] = useState(null);
+const [spinAngle, setSpinAngle] = useState(0);
+
+const doSpin = () => {
+  if (spinning || spinNames.length === 0) return;
+  setSpinning(true);
+  setSpinWinner(null);
+  const winnerIndex = Math.floor(Math.random() * spinNames.length);
+  const newAngle = spinAngle + 360 * 5 + (360 / spinNames.length) * winnerIndex;
+  setSpinAngle(newAngle);
+  setTimeout(() => {
+    setSpinWinner(spinNames[winnerIndex]);
+    setSpinning(false);
+  }, 3000);
+};
   if(!ageConfirmed&&!ageDenied) return (<div className="min-h-screen bg-[#0A0A0E] text-white flex items-center justify-center max-w-[430px] mx-auto p-6"><div className="w-full text-center"><p className="text-[11px] tracking-[0.3em] text-[#E8C469] font-bold">LOOMI-LIVE</p><h1 className="text-[32px] font-bold mt-2">18+ ONLY 🔞</h1><p className="text-sm text-white/60 mt-2">Adult live streams, private chats and paid content. You must be 18+ to enter.</p><div className="bg-[#16161D] border border-white/10 rounded-xl p-4 mt-4 text-left text-xs space-y-2"><p>✅ I am 18 years or older</p><p>✅ I agree to Rules & T's & C's</p><p>✅ I will not share screenshots / recordings</p><p>✅ I will respect hosts & users</p></div><button onClick={()=>{ try{localStorage.setItem("loomi_18","yes");}catch{} setAgeConfirmed(true); setShowTerms(true); }} className="w-full mt-4 bg-[#E8C469] text-black py-4 rounded-xl font-bold">I AM 18+ - ENTER 🔞</button><button onClick={()=>setAgeDenied(true)} className="w-full mt-3 bg-[#16161D] border border-white/10 py-3 rounded-xl font-bold text-sm">I am UNDER 18 - Leave</button><button onClick={()=>setShowRules(true)} className="w-full mt-3 text-[#E8C469] text-xs underline">Read Rules & T's & C's First</button>{showRules&&<div className="mt-4 bg-[#121218] border border-[#E8C469] rounded-xl p-4 text-left text-xs space-y-2 max-h-[300px] overflow-y-auto"><h2 className="font-bold text-center">RULES & T's & C's - 18+</h2><p><b>1. 18+ ONLY:</b> No minors.</p><p><b>2. CONSENT:</b> No means no.</p><p><b>3. NO RECORDING:</b> No screenshots / leaking.</p><p><b>4. NO REAL INFO:</b> No phone / address / ID in chat.</p><p><b>5. NO ILLEGAL:</b> No minors, no non-consensual, no violence.</p><p><b>6. COINS:</b> No refunds except host no-show. Cashout min 50, weekly.</p><button onClick={()=>setShowRules(false)} className="w-full mt-2 bg-[#E8C469] text-black py-2 rounded-full font-bold">Close</button></div>}</div></div>);
   if(authLoading) return (<div className="min-h-screen bg-[#0A0A0E] text-white flex items-center justify-center max-w-[430px] mx-auto"><p className="font-bold text-[#E8C469]">LOOMI-LIVE loading...</p></div>);
   if(!authUser) return (<div>Login - Please reload</div>);
-  return (<div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col max-w-[430px] mx-auto relative overflow-hidden">
+  return;)(<div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col max-w-[430px] mx-auto relative overflow-hidden">
         <div className="flex justify-between items-center px-4 pt-3 pb-2 bg-[#0A0A0E] border-b border-white/10 sticky top-0 z-40">
         <div><p className="text-[10px] tracking-[0.25em] text-[#E8C469] font-bold leading-none">MANSION</p><h1 className="text-[20px] font-bold leading-none mt-1">LOOMI-LIVE <span className="text-[9px] bg-red-600 px-1.5 py-0.5 rounded-full align-middle font-bold">18+</span></h1></div>
         <div className="flex items-center gap-2">
@@ -238,6 +256,54 @@ export default function LoomiLive() {
         <p className="text-[10px] tracking-[0.2em] text-[#E8C469] font-bold px-1 pt-1">CONTENT</p>
         <button onClick={handleLogout} className="w-full bg-red-600 py-3 rounded-xl font-bold text-sm">Logout</button>
         <p className="text-center text-[10px] text-white/30 pb-2">LOOMI-LIVE 18+ • v1.0</p>
+      {/* SPIN THE ROOM */}
+<div className="mx-3 mt-3 bg-[#16161D] border border-[#E8C469]/30 rounded-2xl p-4">
+  <div className="flex justify-between items-center">
+    <div>
+      <p className="text-[10px] tracking-[0.25em] text-[#E8C469] font-bold">SPIN THE ROOM 🎲</p>
+      <h3 className="font-bold text-[16px]">{spinNames.length} people in spin</h3>
+    </div>
+    <span className="text-[11px] bg-[#E8C469] text-black px-2 py-1 rounded-full font-bold">LIVE</span>
+  </div>
+
+  {/* WHEEL */}
+  <div className="relative w-[180px] h-[180px] mx-auto my-4">
+    <div className="absolute -top-2 left-1/2 -translate-x-1/2 z-10 text-[20px]">▼</div>
+    <div
+      className="w-full h-full rounded-full border-4 border-[#E8C469] overflow-hidden relative transition-transform duration-[3000ms] ease-out"
+      style={{ transform: `rotate(${spinAngle}deg)` }}
+    >
+      {spinNames.map((n, i) => (
+        <div key={i} className="absolute inset-0 flex items-start justify-center"
+          style={{ transform: `rotate(${(360 / spinNames.length) * i}deg)` }}>
+          <span className="text-[11px] font-bold mt-2">{n}</span>
+        </div>
+      ))}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="w-14 h-14 bg-[#0A0A0E] border-2 border-[#E8C469] rounded-full flex items-center justify-center text-[22px]">🎲</div>
+      </div>
+    </div>
+  </div>
+
+  {/* WINNER */}
+  {spinWinner && (
+    <div className="bg-[#E8C469] text-black rounded-xl p-3 text-center mb-3">
+      <p className="text-[11px] font-bold">🎉 WINNER 🎉</p>
+      <p className="font-bold text-[18px]">{spinWinner}</p>
+      <p className="text-xs">Wins FREE Private Chat / Discount!</p>
+      <button onClick={() => setSpinWinner(null)} className="mt-2 bg-black text-white px-4 py-1.5 rounded-full text-xs font-bold">Claim + Close</button>
+    </div>
+  )}
+
+  <button
+    onClick={doSpin}
+    disabled={spinning}
+    className="w-full bg-[#E8C469] text-black py-3 rounded-xl font-bold disabled:opacity-50"
+  >
+    {spinning ? "Spinning... 🎲" : "SPIN THE ROOM 🎲"}
+  </button>
+  <p className="text-center text-[11px] text-white/50 mt-2">Chat to get your name added to the spin</p>
+</div>
       </div></div>)}
 
       {/* === DAILY / WATERMARK / BOTTOM NAV === */}
