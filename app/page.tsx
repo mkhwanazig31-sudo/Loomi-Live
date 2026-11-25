@@ -144,8 +144,6 @@ return (
   Dashboard
 </button>
 </div>
-
-      {/* === WHO YOU ARE === */}
       <div className="flex justify-between items-center px-4 py-2.5 bg-[#0A0A0E] text-xs border-b border-white/5">
         <button onClick={()=>setViewingProfile(nickname)} className="font-bold">@{nickname} <span className="text-[#E8C469] text-[10px]">• View Profile →</span></button>
         <button onClick={()=>setShowPrivacy(true)} className="bg-[#16161D] border border-white/10 px-3 py-1.5 rounded-full text-[10px] font-bold">🛡️ Privacy</button>
