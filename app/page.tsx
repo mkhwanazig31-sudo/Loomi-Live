@@ -130,8 +130,7 @@ const doSpin = () => {
     setSpinning(false);
   }, 3000);
 };
-  
-  if(authLoading) return (<div className="min-h-screen bg-[#0A0A0E] text-white flex items-center justify-center max-w-[430px] mx-auto"><p className="font-bold text-[#E8C469]">LOOMI-LIVE loading...</p></div>);
+  if(authLoading) return (<div>Loading...</div>);
   if(!authUser) return (<div>Login - Please reload</div>);
   if(!ageConfirmed) return (<div>Age Gate - 18+ Only</div>);
   return(<div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col max-w-[430px] mx-auto relative overflow-hidden">
