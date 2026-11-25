@@ -133,11 +133,9 @@ const doSpin = () => {
   
   if(authLoading) return (<div className="min-h-screen bg-[#0A0A0E] text-white flex items-center justify-center max-w-[430px] mx-auto"><p className="font-bold text-[#E8C469]">LOOMI-LIVE loading...</p></div>);
   if(!authUser) return (<div>Login - Please reload</div>);
-  return(<div> className="min-h-screen bg-[#0A0A0E] text-white flex flex-col max-w-[430px] mx-auto relative overflow-hidden">
+  return(<div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col max-w-[430px] mx-auto relative overflow-hidden">
         <div className="flex justify-between items-center px-4 pt-3 pb-2 bg-[#0A0A0E] border-b border-white/10 sticky top-0 z-40">
         <div><p className="text-[10px] tracking-[0.25em] text-[#E8C469] font-bold leading-none">MANSION</p><h1 className="text-[20px] font-bold leading-none mt-1">LOOMI-LIVE <span className="text-[9px] bg-red-600 px-1.5 py-0.5 rounded-full align-middle font-bold">18+</span></h1></div>
-        <div cla// ... something above ...
-        return (<div> ... // <- this one forgot its );
         if(!ageConfirmed...) return (<div ... // <- Vercel crashes heressName="flex items-center gap-2">
           <button onClick={()=>setTab("dm")} className="relative w-9 h-9 bg-[#16161D] border border-white/10 rounded-full text-sm">💬{dmThreads.length>0&&<span className="absolute -top-1 -right-1 bg-[#E8C469] text-black text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">{dmThreads.length}</span>}</button>
           <button onClick={()=>setShowNotifs(true)} className="relative w-9 h-9 bg-[#16161D] border border-white/10 rounded-full text-sm">🔔{notifications.length>0&&<span className="absolute -top-1 -right-1 bg-red-500 text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">{notifications.length}</span>}</button>
