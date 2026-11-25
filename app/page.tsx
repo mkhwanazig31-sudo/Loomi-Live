@@ -140,9 +140,11 @@ const doSpin = () => {
           <button onClick={()=>setTab("dm")} className="relative w-9 h-9 bg-[#16161D] border border-white/10 rounded-full text-sm">💬{dmThreads.length>0&&<span className="absolute -top-1 -right-1 bg-[#E8C469] text-black text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">{dmThreads.length}</span>}</button>
           <button onClick={()=>setShowNotifs(true)} className="relative w-9 h-9 bg-[#16161D] border border-white/10 rounded-full text-sm">🔔{notifications.length>0&&<span className="absolute -top-1 -right-1 bg-red-500 text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">{notifications.length}</span>}</button>
           <span className="bg-[#16161D] border border-white/10 px-3 py-1.5 rounded-full text-xs font-bold">🪙 {keys}</span>
-          <button onClick={()=>setShowDashboard(true)} className="w-9 h-9 bg-[#16161D] border border-white/10 rounded-full text-sm">☰</button>
-        </div>
-      </div>
+          <button onClick={()=>setShowDashboard(true)}>
+  Dashboard
+</button>
+</div>
+</div>
 
       {/* === WHO YOU ARE === */}
       <div className="flex justify-between items-center px-4 py-2.5 bg-[#0A0A0E] text-xs border-b border-white/5">
