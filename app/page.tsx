@@ -161,21 +161,23 @@ export default function LoomiLive() {
     setSpinning(false);
   }, 3000);
 };
-if (authLoading) { return (<div>Loading...</div>); }
-if (!authUser) { return (<div>Login - Please reload</div>); }
-if (!ageConfirmed) { return (<div>Age Gate - 18+ Only</div>); }
+if (authLoading) { return (<div className="min-h-screen bg-[#0A0A0E] text-white flex items-center justify-center">Loading...</div>); }
+if (!authUser) { return (<div className="min-h-screen bg-[#0A0A0E] text-white flex items-center justify-center">Login - Please reload</div>); }
+if (!ageConfirmed) { return (<div className="min-h-screen bg-[#0A0A0E] text-white flex items-center justify-center">Age Gate - 18+ Only</div>); }
 
-return (<div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col max-w-[430px] mx-auto relative overflow-hidden">
-        <div className="flex justify-between items-center px-4 pt-3 pb-2 bg-[#0A0A0E] border-b border-white/10 sticky top-0 z-40">
-        <div><p className="text-[10px] tracking-[0.25em] text-[#E8C469] font-bold leading-none">MANSION</p>...     
-        <div><p className="text-[10px] tracking-[0.25em] text-[#E8C469] font-bold leading-none">MANSION</p><h1 className="text-[20px] font-bold leading-none mt-1">LOOMI-LIVE <span className="text-[9px] bg-red-600 px-1.5 py-0.5 rounded-full align-middle font-bold">18+</span></h1></div>
-          <button onClick={()=>setTab("dm")} className="relative w-9 h-9 bg-[#16161D] border border-white/10 rounded-full text-sm">💬{dmThreads.length>0&&<span className="absolute -top-1 -right-1 bg-[#E8C469] text-black text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">{dmThreads.length}</span>}</button>
-          <button onClick={()=>setShowNotifs(true)} className="relative w-9 h-9 bg-[#16161D] border border-white/10 rounded-full text-sm">🔔{notifications.length>0&&<span className="absolute -top-1 -right-1 bg-red-500 text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">{notifications.length}</span>}</button>
-          <span className="bg-[#16161D] border border-white/10 px-3 py-1.5 rounded-full text-xs font-bold">🪙 {keys}</span>
-          <button onClick={()=>setShowDashboard(true)}>
-  Dashboard
-</button>
-</div>
+return (<div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col max-w- mx-auto relative overflow-hidden">
+  <div className="flex justify-between items-center px-4 pt-3 pb-2 bg-[#0A0A0E] border-b border-white/10 sticky top-0 z-40">
+    <div>
+      <p className="text- tracking-[0.25em] text-[#E8C469] font-bold leading-none">MANSION</p>
+      <h1 className="text- font-bold leading-none mt-1">LOOMI-LIVE <span className="text- bg-red-600 px-1.5 py-0.5 rounded-full align-middle font-bold">18+</span></h1>
+    </div>
+    <div className="flex items-center gap-2">
+      <button onClick={() => setTab("dm")} className="relative w-9 h-9 bg-[#16161D] border border-white/10 rounded-full text-sm">💬{dmThreads.length > 0 && <span className="absolute -top-1 -right-1 bg-[#E8C469] text-black text- w-4 h-4 rounded-full flex items-center justify-center font-bold">{dmThreads.length}</span>}</button>
+      <button onClick={() => setShowNotifs(true)} className="relative w-9 h-9 bg-[#16161D] border border-white/10 rounded-full text-sm">🔔{notifications.length > 0 && <span className="absolute -top-1 -right-1 bg-red-500 text- w-4 h-4 rounded-full flex items-center justify-center font-bold">{notifications.length}</span>}</button>
+      <span className="bg-[#16161D] border border-white/10 px-3 py-1.5 rounded-full text-xs font-bold">🪙 {keys}</span>
+      <button onClick={() => setShowDashboard(true)} className="bg-[#16161D] border border-white/10 px-3 py-1.5 rounded-full text-xs font-bold">☰ Dashboard</button>
+    </div>
+  </div>
       <div className="flex justify-between items-center px-4 py-2.5 bg-[#0A0A0E] text-xs border-b border-white/5">
         <button onClick={()=>setViewingProfile(nickname)} className="font-bold">@{nickname} <span className="text-[#E8C469] text-[10px]">• View Profile →</span></button>
         <button onClick={()=>setShowPrivacy(true)} className="bg-[#16161D] border border-white/10 px-3 py-1.5 rounded-full text-[10px] font-bold">🛡️ Privacy</button>
