@@ -81,7 +81,31 @@ export default function LoomiLive() {
   const toggleFollow=async (u:string)=>{ if(u===nickname) return; const isF=following.includes(u); const nx=isF?following.filter(x=>x!==u):[...following,u]; setFollowing(nx); try{localStorage.setItem("loomi_following",JSON.stringify(nx));}catch{} if(authUser){ try{ await updateDoc(doc(db,"loomi_users",authUser.uid),{following:nx}); }catch{} } if(!isF) setNotifications(p=>[{id:Date.now().toString(),text:`You followed @${u} ✅`,user:u,time:Date.now()},...p].slice(0,20)); };
   const claimDaily=()=>{ if(dailyClaimed) return; const nk=keys+10; setKeys(nk); try{localStorage.setItem("loomi_keys",nk.toString()); localStorage.setItem("loomi_daily",new Date().toDateString());}catch{} setDailyClaimed(true); alert("🎉 Daily Bonus +10 🪙"); };
   const shareApp=async ()=>{ const o=typeof window!=="undefined"?window.location.origin:""; const t=`Join me on LOOMI-LIVE 🔴✨ - 18+ Live, Chat, Earn! @${nickname} - ${o}`; try{ if(navigator.share) await navigator.share({title:"LOOMI-LIVE 18+",text:t,url:o}); else { await navigator.clipboard.writeText(t); alert("Link copied!"); } }catch{ try{ await navigator.clipboard.writeText(t); alert("Link copied!"); }catch{} } };
-  const sendChat=async ()=>{ const t=input.trim(); if(!t) return; const room=currentRoom||(isLive?nickname:watching); if(!room) return alert("Go LIVE or watch first"); const mu=nicknameRef.current||nickname; setInput(""); setChat(p=>[...p,{id:"local-"+Date.now(),room,user:mu,msg:t,createdAt:{seconds:Date.now()/1000}}]); addFloater(mu,t); autoReport(mu,t); try{ await addDoc(collection(db,"live_chat"),{room,user:mu,msg:t,createdAt:serverTimestamp(),ts:Date.now()}); }catch{ setChatError("Saved locally - check Rules"); } };
+  const sendChat = async () => {
+  const t = input.trim();
+  if (!t) return;
+  const room = currentRoom || (isLive ? nickname : watching);
+  if (!room) return alert("Go LIVE or watch first");
+  const mu = nicknameRef.current || nickname;
+  setInput("");
+  setChat(p => [...p, { id: "local-" + Date.now(), room, user: mu, msg: t, createdAt: { seconds: Date.now() / 1000 } }]);
+  addFloater(mu, t);
+  autoReport(mu, t);
+
+  // ✅ Auto-add chatter to Spin The Room
+  setSpinNames(prev => {
+    if (prev.includes(mu)) return prev;
+    if (prev.length >= 12) return prev; // keep wheel readable
+    return [...prev, mu];
+  });
+
+  try {
+    await addDoc(collection(db, "live_chat"), { room, user: mu, msg: t, createdAt: serverTimestamp(), ts: Date.now() });
+  } catch {
+    setChatError("Saved locally - check Rules");
+  }
+};
+  
   const sendGift=async (cost:number,emoji:string)=>{ if(!currentRoom) return alert("Go live or watch first"); if(keys<cost){ setShowRecharge(true); return; } if(cost>0){ const nk=keys-cost; setKeys(nk); try{localStorage.setItem("loomi_keys",nk.toString());}catch{} } triggerGift(emoji); try{ await addDoc(collection(db,"live_chat"),{room:currentRoom,user:nicknameRef.current,msg:`sent ${emoji}`,gift:emoji,cost,createdAt:serverTimestamp(),ts:Date.now()}); }catch{} };
   const isVideoUrl=(u:string)=>/\.(mp4|webm|mov)(\?|$)/i.test(u)||u.includes("video");
   const getMediaType=(u:string,ty:string)=>{ if(ty==="video") return "video"; if(!u) return "text"; if(isVideoUrl(u)||u.startsWith("data:video")) return "video"; return "image"; };
@@ -113,16 +137,11 @@ export default function LoomiLive() {
   const isProfilePrivate=(u:string)=>{ try{ return localStorage.getItem("loomi_private_"+u)==="1"; }catch{ return false; } };
   const DrawerRow=({icon,label,sub,onClick,highlight=false,badge}:any)=>(<div onClick={onClick} className={`flex items-center gap-3 px-3.5 py-3 cursor-pointer rounded-xl ${highlight?"bg-[#E8C469] text-black":"bg-[#16161D] border border-white/10"}`}><div className={`w-9 h-9 shrink-0 rounded-full flex items-center justify-center text-[16px] ${highlight?"bg-black/10":"bg-[#0A0A0E]"}`}>{icon}</div><div className="flex-1 min-w-0"><p className={`text-[14px] font-bold leading-tight truncate ${highlight?"text-black":"text-white"}`}>{label}</p>{sub&&<p className={`text-[11px] leading-tight truncate ${highlight?"text-black/60":"text-white/50"}`}>{sub}</p>}</div>{badge&&<span className="bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{badge}</span>}<span className={highlight?"text-black/60":"text-white/40"}>›</span></div>);
   // --- SPIN THE ROOM ---
-const [spinNames, setSpinNames] = useState(["You", "Breezy", "Kay", "Lerato", "Thabo", "Mpho"]);
-const [spinning, setSpinning] = useState(false);
-const [spinWinner, setSpinWinner] = useState(null);
-const [spinAngle, setSpinAngle] = useState(0);
-const [spinNames, setSpinNames] = useState(["You", "Breezy", "Kay", "Lerato", "Thabo", "Mpho"]);
-const [spinning, setSpinning] = useState(false);
-const [spinWinner, setSpinWinner] = useState(null);
-const [spinAngle, setSpinAngle] = useState(0);
-
-const doSpin = () => {
+  const [spinning, setSpinning] = useState(false);
+  const [spinWinner, setSpinWinner] = useState(null);
+  const [spinAngle, setSpinAngle] = useState(0);
+  const [spinNames, setSpinNames] = useState(["You", "Breezy", "Kay", "Lerato", "Thabo", "Mpho"]);
+  const doSpin = () => {
   if (spinning || spinNames.length === 0) return;
 
   setSpinning(true);
