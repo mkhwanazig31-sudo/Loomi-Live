@@ -117,6 +117,10 @@ const [spinNames, setSpinNames] = useState(["You", "Breezy", "Kay", "Lerato", "T
 const [spinning, setSpinning] = useState(false);
 const [spinWinner, setSpinWinner] = useState(null);
 const [spinAngle, setSpinAngle] = useState(0);
+const [spinNames, setSpinNames] = useState(["You", "Breezy", "Kay", "Lerato", "Thabo", "Mpho"]);
+const [spinning, setSpinning] = useState(false);
+const [spinWinner, setSpinWinner] = useState(null);
+const [spinAngle, setSpinAngle] = useState(0);
 
 const doSpin = () => {
   if (spinning || spinNames.length === 0) return;
