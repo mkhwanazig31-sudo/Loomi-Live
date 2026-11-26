@@ -138,7 +138,6 @@ const doSpin = () => {
     setSpinning(false);
   }, 3000);
 };
-};
 if (authLoading) { return (<div>Loading...</div>); }
 if (!authUser) { return (<div>Login - Please reload</div>); }
 if (!ageConfirmed) { return (<div>Age Gate - 18+ Only</div>); }
