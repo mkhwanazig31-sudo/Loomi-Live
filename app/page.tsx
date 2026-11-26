@@ -219,8 +219,51 @@ return (<div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col max-w
       {tab==="feed"&&(<div className="flex-1 bg-[#0A0A0E] overflow-y-auto pb-[80px]">
         <div className="p-4 space-y-3">
           <div onClick={()=>{ setEditingPost(null); setCreateStep(0); setShowCreatePost(true); }} className="bg-[#16161D] border border-white/10 rounded-xl p-3 flex items-center gap-3 cursor-pointer"><div className="w-10 h-10 rounded-full bg-[#E8C469] text-black flex items-center justify-center font-bold">{nickname[0]?.toUpperCase()||"?"}</div><p className="text-sm text-white/50 flex-1">What&apos;s on your mind, @{nickname}?</p><span className="text-[#E8C469] text-xs font-bold">+ Post</span></div>
-          <div className="flex gap-2"><button onClick={()=>{ setPostType("video"); setEditingPost(null); setCreateStep(0); setShowCreatePost(true); }} className="flex-1 bg-[#16161D] border border-white/10 rounded-full py-2 text-xs font-bold">📹 Video</button><button onClick={()=>{ setPostType("post"); setEditingPost(null); setCreateStep(0); setShowCreatePost(true); }} className="flex-1 bg-[#16161D] border border-white/10 rounded-full py-2 text-xs font-bold">🖼️ Photo</button><button onClick={()=>{ setPostType("meme"); setEditingPost(null); setCreateStep(0); setShowCreatePost(true); }} className="flex-1 bg-[#16161D] border border-white/10 rounded-full py-2 text-xs font-bold">😂 Meme</button><button onClick={()=>{ setPostLocked(true); setEditingPost(null); setCreateStep(0); setShowCreatePost(true); }} className="flex-1 bg-[#E8C469] text-black rounded-full py-2 text-xs font-bold">🔒 Paid</button></div>
-        </div>
+          
+<div className="flex gap-2">
+  {[
+    { type: "video" as const, label: "Video", icon: "📹" },
+    { type: "post" as const, label: "Photo", icon: "🖼️" },
+    { type: "meme" as const, label: "Meme", icon: "😂" },
+  ].map((item) => (
+    <button
+      key={item.type}
+      onClick={() => {
+        setPostType(item.type);
+        setPostLocked(false);
+        setEditingPost(null);
+        setPostCaption("");
+        setPostMedia("");
+        setPostPrice(0);
+        setPostViewOnce(false);
+        setPostExpiry("Forever");
+        setCreateStep(0);
+        setShowCreatePost(true);
+      }}
+      className="flex-1 bg-[#16161D] border border-white/10 hover:border-white/25 hover:bg-[#1E1E28] active:scale-95 transition rounded-full py-2.5 text-xs font-bold flex items-center justify-center gap-1.5"
+    >
+      <span>{item.icon}</span> {item.label}
+    </button>
+  ))}
+
+  <button
+    onClick={() => {
+      setPostType("post");
+      setPostLocked(true);
+      setEditingPost(null);
+      setPostCaption("");
+      setPostMedia("");
+      setPostPrice(0);
+      setPostViewOnce(false);
+      setPostExpiry("Forever");
+      setCreateStep(0);
+      setShowCreatePost(true);
+    }}
+    className="flex-1 bg-gradient-to-r from-[#E8C469] to-orange-500 text-black rounded-full py-2.5 text-xs font-black flex items-center justify-center gap-1.5 shadow-[0_0_20px_rgba(232,196,105,0.35)] hover:shadow-[0_0_30px_rgba(232,196,105,0.55)] active:scale-95 transition"
+  >
+    🔒 Paid
+  </button>
+</div></div>
         {trendingTags.length>0&&(<div className="px-4 pb-2"><p className="text-xs font-bold text-[#E8C469] mb-2">🔥 TRENDING NOW</p><div className="flex gap-2 overflow-x-auto">{trendingTags.map(t=>(<button key={t.tag} onClick={()=>setSearchQuery(t.tag)} className="whitespace-nowrap bg-[#16161D] border border-white/10 rounded-full px-3 py-1.5 text-xs">{t.tag} <span className="text-[#E8C469] font-bold">{t.count}</span></button>))}</div></div>)}
         <div className="flex gap-2 px-4 pb-3 overflow-x-auto"><button onClick={()=>setFeedFilter("foryou")} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold ${feedFilter==="foryou"?"bg-[#E8C469] text-black":"bg-[#16161D] border border-white/10"}`}>✨ For You</button><button onClick={()=>setFeedFilter("following")} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold ${feedFilter==="following"?"bg-[#E8C469] text-black":"bg-[#16161D] border border-white/10"}`}>👥 Following</button><button onClick={()=>setFeedFilter("trending")} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold ${feedFilter==="trending"?"bg-[#E8C469] text-black":"bg-[#16161D] border border-white/10"}`}>🔥 Trending</button><button onClick={()=>setFeedFilter("saved")} className={`whitespace-nowrap px-4 py-1.5 rounded-full text-xs font-bold ${feedFilter==="saved"?"bg-[#E8C469] text-black":"bg-[#16161D] border border-white/10"}`}>🔖 Saved ({savedPosts.length})</button></div>
         {filteredPosts.length===0&&(<div className="text-center px-6 mt-8"><p className="text-4xl">📸</p><p className="font-bold mt-2">No posts yet in {feedFilter}</p><button onClick={()=>{ setEditingPost(null); setCreateStep(0); setShowCreatePost(true); }} className="mt-3 bg-[#E8C469] text-black px-6 py-2.5 rounded-full text-xs font-bold">Create First Post 🚀</button><button onClick={()=>setShowHostRecruit(true)} className="mt-2 w-full bg-[#16161D] border border-[#E8C469] text-[#E8C469] px-6 py-2.5 rounded-full text-xs font-bold">👑 Want to EARN? Become a Host</button></div>)}
