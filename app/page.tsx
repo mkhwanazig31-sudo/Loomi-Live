@@ -229,7 +229,7 @@ return (<div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col max-w
     <button
       key={item.type}
       onClick={() => {
-        setPostType("post");
+        setPostType((p.postType as any)||"post")
         setPostLocked(false);
         setEditingPost(null);
         setPostCaption("");
