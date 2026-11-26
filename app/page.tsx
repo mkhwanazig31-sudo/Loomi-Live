@@ -248,7 +248,7 @@ return (<div className="min-h-screen bg-[#0A0A0E] text-white flex flex-col max-w
 
   <button
     onClick={() => {
-      setPostType((p.postType as any) || "post")
+      setPostType("post");
       setPostLocked(true);
       setEditingPost(null);
       setPostCaption("");
