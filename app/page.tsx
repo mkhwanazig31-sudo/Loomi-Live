@@ -211,7 +211,7 @@ export default function LoomiLive() {
   useEffect(() => {
     const u = onSnapshot(collection(db, "loomi_users"), (s) => {
       const arr: HostProfile[] = [];
-      s.docs.forEach((d) => { const data = d.data() as any; if (data.hostProfile) arr.push({ username: data.username || d.id, ...EMPTY_HOST, ...data.hostProfile, username: data.username || d.id }); });
+      s.docs.forEach((d) => { const data = d.data() as any; if (data.hostProfile) arr.push({ ...EMPTY_HOST, ...data.hostProfile, username: data.username || d.id }); });
       setHostProfiles(arr);
     }, () => {});
     return () => u();
